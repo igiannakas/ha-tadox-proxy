@@ -2,7 +2,7 @@
 
 These tests cover bug-fixes that were identified during the audit:
 
-Bug 0 – min/max temperature range showing 7/35 instead of 5/30 (climate.py)
+Bug 0 – min/max temperature range showing 7/35 instead of 5/25 (climate.py)
     HA's CachedProperties metaclass caches min_temp / max_temp on first access.
     If _attr_min_temp / _attr_max_temp are only set as instance attributes in
     __init__ (after super().__init__()), the cached value falls through to HA's
@@ -83,7 +83,7 @@ class TestClassLevelTempLimits:
     HA's CachedProperties metaclass caches min_temp/max_temp on first access.
     If the _attr_* variants only exist as instance attributes (set in __init__
     after super().__init__()), the cache sees HA's defaults (7/35) instead of
-    our 5/30.  This AST-based test guarantees the class-level declarations
+    our 5/25.  This AST-based test guarantees the class-level declarations
     survive future refactoring.
     """
 
@@ -124,12 +124,12 @@ class TestClassLevelTempLimits:
         )
         assert assigns["_attr_min_temp"] == 5.0
 
-    def test_max_temp_class_level_is_30(self):
+    def test_max_temp_class_level_is_25(self):
         assigns = self._get_class_level_assigns()
         assert "_attr_max_temp" in assigns, (
             "_attr_max_temp must be a class-level attribute in TadoXProxyClimate"
         )
-        assert assigns["_attr_max_temp"] == 30.0
+        assert assigns["_attr_max_temp"] == 25.0
 
     def test_values_match_regulation_config(self):
         """Class-level defaults must match RegulationConfig defaults."""

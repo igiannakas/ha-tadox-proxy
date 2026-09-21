@@ -118,10 +118,10 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_preset_modes = PRESET_LIST
     _attr_translation_key = "tadox_proxy"
-    # Class-level defaults so HA's CachedProperties metaclass sees 5/30
+    # Class-level defaults so HA's CachedProperties metaclass sees 5/25
     # BEFORE super().__init__() runs (prevents fallback to HA's 7/35).
     _attr_min_temp: float = 5.0
-    _attr_max_temp: float = 30.0
+    _attr_max_temp: float = 25.0
 
     def __init__(self, coordinator, unique_id: str, config_entry: ConfigEntry):
         """Initialize the proxy thermostat."""
@@ -202,8 +202,12 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
                 away_target_c=opts.get(CONF_AWAY_TARGET, config.presets.away_target_c),
                 frost_protection_target_c=opts.get(CONF_FROST_PROTECTION_TARGET, config.presets.frost_protection_target_c),
             )
-            # Ensure max_target_c is at least as high as boost_target_c
-            config.max_target_c = max(config.max_target_c, config.presets.boost_target_c)
+            # Tado V3+ accepts 5-25 C, so the device ceiling wins over a
+            # higher boost preset: clamp boost into range rather than
+            # raising max_target_c above what the TRV will accept.
+            config.presets.boost_target_c = min(
+                config.presets.boost_target_c, config.max_target_c
+            )
             # Adaptive gain scheduling
             config.gain_scheduling_enabled = opts.get(
                 CONF_GAIN_SCHEDULING, config.gain_scheduling_enabled

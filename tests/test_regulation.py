@@ -99,7 +99,7 @@ class TestFeedforward:
 
         # Offset = 0, Error = 4°C, |error| > 2.0 → Kp = 0.8 * 1.5 = 1.2
         # P = 1.2 * 4 = 4.8, Command = 21 + 0 + 4.8 = 25.8°C
-        assert result.target_for_tado_c == 25.8
+        assert result.target_for_tado_c == 25.0
         assert result.error_c == 4.0
 
     def test_heating_phase_with_hot_radiator(self):
@@ -118,8 +118,8 @@ class TestFeedforward:
 
         # Offset = 7°C, Error = 2°C, |error|=2.0 at startup boundary
         # t = (2.0-0.5)/(2.0-0.5) = 1.0 → multiplier = 1.5, Kp = 1.2
-        # P = 2.0 * 1.2 = 2.4; Raw = 21 + 7 + 2.4 = 30.4 → clamped to 30.0
-        assert result.target_for_tado_c == 30.0
+        # P = 2.0 * 1.2 = 2.4; Raw = 21 + 7 + 2.4 = 30.4 → clamped to 25.0
+        assert result.target_for_tado_c == 25.0
         assert result.is_saturated is True
 
     def test_overshoot_reduces_command(self):
@@ -524,8 +524,8 @@ class TestPresetConfig:
             state=state,
         )
 
-        # Raw = 25 + 2 + 5.6 = 32.6 → clamped to 30.0 (max_target_c)
-        assert result.target_for_tado_c == 30.0
+        # Raw = 25 + 2 + 5.6 = 32.6 → clamped to 25.0 (max_target_c)
+        assert result.target_for_tado_c == 25.0
         assert result.is_saturated is True
 
     def test_regulation_with_frost_protection_setpoint(self):
@@ -756,7 +756,7 @@ class TestNanInfGuard:
 
     def test_nan_fallback_clamped_to_bounds(self):
         """When sensor is NaN and setpoint exceeds max_target_c, fallback must be clamped."""
-        reg = make_regulator()  # max_target_c = 30.0
+        reg = make_regulator()  # max_target_c = 25.0
         state = RegulationState()
 
         result = reg.compute(
@@ -767,8 +767,8 @@ class TestNanInfGuard:
             state=state,
         )
 
-        # 32.0 exceeds max_target_c (30.0), must be clamped
-        assert result.target_for_tado_c == 30.0
+        # 32.0 exceeds max_target_c (25.0), must be clamped
+        assert result.target_for_tado_c == 25.0
 
     def test_valid_inputs_still_work_normally(self):
         """Normal inputs must not be affected by the NaN guard."""
@@ -949,7 +949,7 @@ class TestTemperatureRangeLimits:
 
     def test_default_max_target(self):
         cfg = RegulationConfig()
-        assert cfg.max_target_c == 30.0
+        assert cfg.max_target_c == 25.0
 
     def test_regulation_clamps_to_min(self):
         """Computed target below min_target_c is clamped to 5.0."""
@@ -966,7 +966,7 @@ class TestTemperatureRangeLimits:
         assert result.target_for_tado_c >= cfg.min_target_c
 
     def test_regulation_clamps_to_max(self):
-        """Computed target above max_target_c is clamped to 30.0."""
+        """Computed target above max_target_c is clamped to 25.0."""
         cfg = RegulationConfig()
         reg = FeedforwardPiRegulator(cfg)
         state = RegulationState()

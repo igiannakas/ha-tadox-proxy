@@ -80,9 +80,18 @@ class RegulationConfig:
     tuning: CorrectionTuning = field(default_factory=CorrectionTuning)
     presets: PresetConfig = field(default_factory=PresetConfig)
 
-    # Absolute temperature limits for commands sent to Tado
+    # Absolute temperature limits for commands sent to Tado.
+    #
+    # Tado V3+ radiator thermostats (reached over HomeKit or the cloud
+    # integration) accept 5–25 °C only.  Commanding above 25 makes
+    # ``climate.set_temperature`` raise ServiceValidationError
+    # ("Provided temperature X is not valid. Accepted range is 5 to 25"),
+    # so every write is rejected and the room never heats.  Because the
+    # regulator clamps to these limits *before* deciding, keeping the
+    # ceiling here (rather than clamping at send time) also keeps the
+    # anti-windup saturation logic honest.
     min_target_c: float = 5.0
-    max_target_c: float = 30.0
+    max_target_c: float = 25.0
 
     # Anti-windup limits for the integral correction term
     integral_min_c: float = -2.0
