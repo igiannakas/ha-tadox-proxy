@@ -62,7 +62,7 @@
               "presence_home_delay_s": "Home delay"
             },
             "data_description": {
-              "presence_sensor_id": "Binary sensor for presence detection. Switches to away mode when no presence is detected.",
+              "presence_sensor_id": "Binary sensor or input boolean for presence detection (on = home, off = away). Switches to away mode when it turns off.",
               "presence_away_delay_s": "Delay before switching to away mode after presence is lost.",
               "presence_home_delay_s": "Delay before switching back to comfort mode after presence is detected."
             }

@@ -162,8 +162,11 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
 
         # --- Build presence sensor section schema ---
         presence_schema_dict: dict = {
+            # Presence logic treats "off" as away and any other known state as
+            # home, so only on/off entities fit.  person / device_tracker
+            # ("home" / "not_home") would read "not_home" as home.
             vol.Optional(CONF_PRESENCE_SENSOR_ID): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="binary_sensor")
+                selector.EntitySelectorConfig(domain=["binary_sensor", "input_boolean"])
             ),
             vol.Required(
                 CONF_PRESENCE_AWAY_DELAY_S,

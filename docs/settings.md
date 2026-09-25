@@ -92,7 +92,10 @@ Point it at a window contact (`binary_sensor.*`).
 
 ### Presence detection
 
-Point it at a presence sensor or person tracker (`binary_sensor.*`).
+Point it at a presence sensor (`binary_sensor.*`) or a helper toggle
+(`input_boolean.*`): on means someone is home, off means nobody is. Person and
+device trackers (`person.*`, `device_tracker.*`) are not supported — wrap them in a
+template binary sensor first.
 
 - **Nobody home:** after a delay (default 10 minutes), the room switches to Away.
 - **Someone returns:** after a delay (default 30 s), the previous preset comes back.

@@ -62,7 +62,7 @@
               "presence_home_delay_s": "Verzögerung Heimkehr"
             },
             "data_description": {
-              "presence_sensor_id": "Binärsensor zur Präsenzerkennung. Wechselt bei fehlender Präsenz in den Abwesend-Modus.",
+              "presence_sensor_id": "Binärsensor oder Input-Boolean zur Präsenzerkennung (an = zu Hause, aus = abwesend). Wechselt beim Ausschalten in den Abwesend-Modus.",
               "presence_away_delay_s": "Verzögerung bevor in den Abwesend-Modus gewechselt wird.",
               "presence_home_delay_s": "Verzögerung bevor nach erkannter Präsenz zum Komfort-Modus zurückgekehrt wird."
             }

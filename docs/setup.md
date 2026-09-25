@@ -193,7 +193,8 @@ drops to frost protection after 30 seconds. When it closes, the previous setting
 comes back after 2 minutes. The delay is deliberate — it stops the radiator from
 blasting the moment you shut the window.
 
-**Presence detection.** Pick a presence sensor or person tracker. When nobody is
+**Presence detection.** Pick a presence sensor or an on/off helper (on = home).
+A person tracker will not work here. When nobody is
 home for 10 minutes, the room drops to Away. When someone returns, it recovers after
 30 seconds.
 
