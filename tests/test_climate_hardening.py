@@ -652,7 +652,7 @@ class TestWindowRestorePresenceCheck:
 
 
 # ---------------------------------------------------------------------------
-# Boost restore must re-arm _boost_end_ts (AST-based guard)
+# Boost timestamp handling (AST-based guards)
 # ---------------------------------------------------------------------------
 
 _CLIMATE_PRESETS_PY = os.path.join(_COMP_DIR, "climate_presets.py")
@@ -684,18 +684,19 @@ def _method_assigns_attr(file_path: str, method_name: str, attr_name: str) -> bo
 
 
 class TestBoostRestoreSetsEndTimestamp:
-    """Regression: restoring BOOST after window/presence automation must set
-    _boost_end_ts, otherwise the boost-remaining sensor reports 0 minutes
-    for the whole restored boost period.
+    """Window/presence restore never restarts a boost (a saved BOOST comes
+    back as COMFORT – see test_frost_preset_persistence.py), so those paths
+    must not arm a boost timer.  The normal boost entry point must still set
+    _boost_end_ts, otherwise the boost-remaining sensor reports 0 minutes.
     """
 
-    def test_window_restore_sets_boost_end_ts(self):
-        assert _method_assigns_attr(
+    def test_window_restore_does_not_start_boost(self):
+        assert not _method_assigns_attr(
             _CLIMATE_PRESETS_PY, "_restore_window_state", "_boost_end_ts"
         )
 
-    def test_presence_restore_sets_boost_end_ts(self):
-        assert _method_assigns_attr(
+    def test_presence_restore_does_not_start_boost(self):
+        assert not _method_assigns_attr(
             _CLIMATE_PRESETS_PY, "_restore_presence_state", "_boost_end_ts"
         )
 

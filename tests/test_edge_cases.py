@@ -410,12 +410,11 @@ class TestHvacOffHeatWindowReeval:
 class TestComplexScenarios:
     """Multi-step scenarios combining multiple automations."""
 
-    def test_eco_then_boost_then_window_then_close_restores_boost_with_comfort_fallback(self):
+    def test_eco_then_boost_then_window_then_close_restores_pre_boost_preset(self):
         """ECO → BOOST → window opens → window closes.
 
-        Expected: window close restores BOOST (with new timer).
-        The pre-boost preset (ECO) is lost – COMFORT is used as fallback.
-        This is documented as acceptable behavior (OK 2 in analysis).
+        Expected: the window action cancels the boost and saves the pre-boost
+        preset (ECO), so window close restores ECO – not BOOST.
         """
         wc = WindowAutomationController()
 

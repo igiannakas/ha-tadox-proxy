@@ -581,6 +581,29 @@ class TestWindowCycleEndToEnd:
         self._close_window(ent)
         assert ent.preset_mode == "frost_protection"
 
+    def test_boost_selected_during_window_open_returns_as_comfort(self):
+        ent = _make_entity()
+        _run(_start(ent))
+        _run(_select_preset(ent, "eco"))
+        self._open_window(ent)
+        _run(_select_preset(ent, "boost"))
+        assert ent._window_ctrl.get_saved().preset == "boost"
+        self._close_window(ent)
+        assert ent.preset_mode == "comfort"
+        assert ent.target_temperature == 20.5
+        assert ent._boost_cancel is None
+        assert _active_timers() == []
+
+    def test_boost_running_when_window_opens_returns_to_pre_boost_preset(self):
+        ent = _make_entity()
+        _run(_start(ent))
+        _run(_select_preset(ent, "eco"))
+        _run(_select_preset(ent, "boost"))
+        self._open_window(ent)
+        assert ent._boost_cancel is None
+        self._close_window(ent)
+        assert ent.preset_mode == "eco"
+
     def test_hvac_mode_change_during_window_restores_user_frost(self):
         ent = _make_entity()
         _run(_start(ent))
@@ -749,6 +772,49 @@ class TestRestartEndToEnd:
         _restart_from(old, new2)
         assert new2.preset_mode == "frost_protection"
         assert not new2._presence_ctrl.is_active
+
+    def _go_away(self, ent):
+        ent.hass.set(PRESENCE, "off")
+        ent._async_presence_changed(_event("off"))
+        _fire_last_timer()
+        assert ent.preset_mode == "away"
+
+    def _come_home(self, ent):
+        ent.hass.set(PRESENCE, "on")
+        ent._async_presence_changed(_event("on"))
+        _fire_last_timer()  # home delay
+
+    def test_boost_selected_while_away_returns_as_comfort(self):
+        ent = _make_entity(window=False, presence=True)
+        _run(_start(ent))
+        _run(_select_preset(ent, "frost_protection"))
+        self._go_away(ent)
+        _run(_select_preset(ent, "boost"))
+        assert ent.preset_mode == "away"
+        self._come_home(ent)
+        assert ent.preset_mode == "comfort"
+        assert ent.target_temperature == 20.5
+        assert ent._boost_cancel is None
+        assert ent.boost_remaining_minutes == 0
+
+    def test_boost_running_when_leaving_returns_to_pre_boost_preset(self):
+        ent = _make_entity(window=False, presence=True)
+        _run(_start(ent))
+        _run(_select_preset(ent, "eco"))
+        _run(_select_preset(ent, "boost"))
+        self._go_away(ent)
+        assert ent._boost_cancel is None
+        self._come_home(ent)
+        assert ent.preset_mode == "eco"
+
+    def test_leave_and_return_restores_previous_preset(self):
+        ent = _make_entity(window=False, presence=True)
+        _run(_start(ent))
+        _run(_select_preset(ent, "frost_protection"))
+        self._go_away(ent)
+        assert ent.target_temperature == 17.0  # PresetConfig default away target
+        self._come_home(ent)
+        assert ent.preset_mode == "frost_protection"
 
     def test_user_selected_away_is_kept_when_home_with_snapshot(self):
         ent = _make_entity(window=False, presence=True)

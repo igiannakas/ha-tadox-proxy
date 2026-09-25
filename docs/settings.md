@@ -84,7 +84,9 @@ Point it at a window contact (`binary_sensor.*`).
   shut the window, while the room air is still cold from the draught.
 - If the window shuts again before the first delay is up, nothing happens at all.
 - The preset that comes back is exactly the one you had before — including Frost
-  Protection if you had chosen it yourself.
+  Protection if you had chosen it yourself. If you pick another preset while the
+  window is open, that one comes back instead. Boost is the exception: it is never
+  restarted, so a Boost picked while the window was open comes back as Comfort.
 - Restarting Home Assistant or saving these settings does not change the preset. If
   a window is open during a restart, the room stays in window mode and your previous
   preset still comes back when it closes. The same applies to Away and to a running
@@ -98,7 +100,10 @@ device trackers (`person.*`, `device_tracker.*`) are not supported — wrap them
 template binary sensor first.
 
 - **Nobody home:** after a delay (default 10 minutes), the room switches to Away.
-- **Someone returns:** after a delay (default 30 s), the previous preset comes back.
+- **Someone returns:** after a delay (default 30 s), the previous preset comes back
+  (or the one you picked while away). A Boost is never restarted — it comes back as
+  Comfort. A Boost that was running when you left is cancelled, and the preset from
+  before the Boost is the one that comes back.
 
 ---
 

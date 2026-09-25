@@ -133,6 +133,11 @@ class PresetMixin:
             preset_to_restore = saved.preset
             # Frost protection is restored as-is: it can only have been saved
             # when the user had selected it before the window opened.
+            # A saved BOOST (selected while the window was open) is not
+            # restarted: boost is a short one-off, so return to COMFORT.
+            if preset_to_restore == PRESET_BOOST:
+                preset_to_restore = PRESET_COMFORT
+                _LOGGER.info("Window restore: BOOST replaced by COMFORT")
             # Safety net: don't restore AWAY when presence sensor shows home
             if preset_to_restore == PRESET_AWAY:
                 presence_sensor = self._config_entry.options.get(CONF_PRESENCE_SENSOR_ID)
@@ -149,23 +154,6 @@ class PresetMixin:
                 self._target_temp = self._comfort_target()
             elif saved.temp is not None:
                 self._target_temp = saved.temp
-
-            # If restoring BOOST, start the expiry timer so it doesn't run
-            # indefinitely. Use COMFORT as the post-boost fallback since the
-            # original pre-boost context was lost when window automation
-            # took over.
-            if preset_to_restore == PRESET_BOOST:
-                self._boost_saved_preset = PRESET_COMFORT
-                self._boost_saved_temp = self._comfort_target()
-                duration_s = self._config.presets.boost_duration_min * 60
-                self._boost_end_ts = time.time() + duration_s
-                self._boost_cancel = async_call_later_boost(
-                    self.hass, duration_s, self._async_boost_expired
-                )
-                _LOGGER.info(
-                    "Boost restored after window close, timer started for %d min",
-                    self._config.presets.boost_duration_min,
-                )
         _LOGGER.info("Window closed: restoring previous preset")
         if not notify:
             return
@@ -287,26 +275,16 @@ class PresetMixin:
             )
             return
 
-        self._preset_mode = saved.preset
-        # If restoring BOOST, start the expiry timer so it doesn't run
-        # indefinitely.  Use COMFORT as the post-boost fallback since the
-        # original pre-boost context was lost when presence automation
-        # took over.
-        if saved.preset == PRESET_BOOST:
-            self._boost_saved_preset = PRESET_COMFORT
-            self._boost_saved_temp = self._comfort_target()
-            duration_s = self._config.presets.boost_duration_min * 60
-            self._boost_end_ts = time.time() + duration_s
-            self._boost_cancel = async_call_later_boost(
-                self.hass, duration_s, self._async_boost_expired
-            )
-            _LOGGER.info(
-                "Boost restored after presence home, timer started for %d min",
-                self._config.presets.boost_duration_min,
-            )
+        preset_to_restore = saved.preset
+        # A saved BOOST (selected while away) is not restarted: boost is a
+        # short one-off, so return to COMFORT.
+        if preset_to_restore == PRESET_BOOST:
+            preset_to_restore = PRESET_COMFORT
+            _LOGGER.info("Presence restore: BOOST replaced by COMFORT")
+        self._preset_mode = preset_to_restore
         # If restoring COMFORT, take the current comfort_target from options
         # (it may have been changed via number entity while away).
-        elif saved.preset == PRESET_COMFORT:
+        if preset_to_restore == PRESET_COMFORT:
             self._target_temp = self._comfort_target()
         elif saved.temp is not None:
             self._target_temp = saved.temp
