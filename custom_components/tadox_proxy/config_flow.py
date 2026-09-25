@@ -29,6 +29,7 @@ from .const import (
     CONF_PRESENCE_SENSOR_ID,
     CONF_SENSOR_GRACE_S,
     CONF_SOURCE_ENTITY_ID,
+    CONF_SUMMER_MODE_ENTITY_ID,
     CONF_URGENT_DECREASE_THRESHOLD_C,
     CONF_WINDOW_CLOSE_DELAY_S,
     CONF_WINDOW_DELAY_S,
@@ -106,7 +107,11 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
             # temperatures set via Number entities, follow_tado_input flag).
             merged = dict(self.config_entry.options)
             # Remove optional sensor keys that were cleared by the user
-            for key in (CONF_WINDOW_SENSOR_ID, CONF_PRESENCE_SENSOR_ID):
+            for key in (
+                CONF_WINDOW_SENSOR_ID,
+                CONF_PRESENCE_SENSOR_ID,
+                CONF_SUMMER_MODE_ENTITY_ID,
+            ):
                 if key not in cleaned:
                     merged.pop(key, None)
             merged.update(cleaned)
@@ -215,6 +220,13 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
                         min=1, max=120, step=1,
                         mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="min",
+                    )
+                ),
+                # Summer mode: an on/off helper shared by all thermostats.
+                # While on, the thermostat is locked at 5 °C.
+                vol.Optional(CONF_SUMMER_MODE_ENTITY_ID): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["input_boolean", "binary_sensor"]
                     )
                 ),
 
@@ -407,6 +419,12 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
                 ),
             }
         )
+
+        summer_entity = opts.get(CONF_SUMMER_MODE_ENTITY_ID)
+        if summer_entity:
+            options_schema = self.add_suggested_values_to_schema(
+                options_schema, {CONF_SUMMER_MODE_ENTITY_ID: summer_entity}
+            )
 
         return self.async_show_form(
             step_id="init",

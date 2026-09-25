@@ -38,6 +38,11 @@ class RegulationMixin:
         """Inner regulation cycle body, protected by _regulation_lock."""
         now = time.time()
 
+        # Summer mode: no regulation, hold the TRV at a fixed 5 °C.
+        if self._summer_active:
+            await self._async_summer_enforce(now)
+            return
+
         # Guard: skip when HVAC is OFF – the TRV has been turned off directly,
         # no regulation needed.
         if self._hvac_mode == HVACMode.OFF:

@@ -15,6 +15,7 @@ Architecture
 - ``normalize_restored_preset`` / ``resolve_boost_restore`` /
   ``window_startup_action`` / ``presence_startup_action`` – pure startup
   decisions used by ``async_added_to_hass``
+- ``resolve_summer_state`` / ``summer_enforcement_needed`` – summer-mode lock
 """
 from __future__ import annotations
 
@@ -410,6 +411,9 @@ class PersistedAutomationState:
     boost_end_ts: float = 0.0
     # Preset/temperature to return to when the boost ends.
     boost_saved: SavedState = field(default_factory=SavedState)
+    # Summer mode was locking the thermostat (used to leave summer mode
+    # correctly when the switch was turned off while HA was down).
+    summer_active: bool = False
 
     VERSION = 1
 
@@ -426,6 +430,7 @@ class PersistedAutomationState:
             "boost_end_ts": self.boost_end_ts,
             "boost_saved_preset": self.boost_saved.preset,
             "boost_saved_temp": self.boost_saved.temp,
+            "summer_active": self.summer_active,
         }
 
     @classmethod
@@ -449,6 +454,7 @@ class PersistedAutomationState:
                 preset=_as_opt_str(data.get("boost_saved_preset")),
                 temp=_as_opt_float(data.get("boost_saved_temp")),
             ),
+            summer_active=data.get("summer_active") is True,
         )
 
 
@@ -558,6 +564,44 @@ def presence_startup_action(
     if sensor_state is None or sensor_state in _UNAVAILABLE_STATES or sensor_state == "off":
         return STARTUP_KEEP
     return STARTUP_RESTORE
+
+
+# ---------------------------------------------------------------------------
+# Summer mode (pure logic)
+# ---------------------------------------------------------------------------
+
+def resolve_summer_state(entity_state: str | None, current: bool) -> bool:
+    """Return whether summer mode is active for a given switch state.
+
+    Only a definite ``on`` / ``off`` changes the lock.  ``unavailable``,
+    ``unknown`` or a missing entity keep the current value, so a flaky helper
+    can never unlock (or lock) the heating by accident.
+    """
+    if entity_state == "on":
+        return True
+    if entity_state == "off":
+        return False
+    return current
+
+
+def summer_enforcement_needed(
+    trv_state: str | None,
+    trv_setpoint: float | None,
+    target_c: float,
+    tolerance_c: float = 0.1,
+) -> bool:
+    """Return True when the TRV must be commanded back to the summer target.
+
+    The TRV must be in ``heat`` mode at ``target_c``.  Nothing is sent while
+    the TRV is missing or unavailable (the command could not be delivered).
+    """
+    if trv_state is None or trv_state in _UNAVAILABLE_STATES:
+        return False
+    if trv_state != "heat":
+        return True
+    if trv_setpoint is None:
+        return True
+    return abs(trv_setpoint - target_c) >= tolerance_c
 
 
 # ---------------------------------------------------------------------------

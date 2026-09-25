@@ -61,6 +61,8 @@ class PresetMixin:
     @callback
     def _async_window_changed(self, event) -> None:
         """Handle window sensor state changes."""
+        if self._summer_active:
+            return
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in ("unavailable", "unknown"):
             return
@@ -82,8 +84,8 @@ class PresetMixin:
         """Switch to frost protection preset after window-open delay."""
         # Already in window mode: never snapshot again.  The current preset is
         # the window-driven frost protection, so saving it would lose the real
-        # pre-open preset.
-        if self._window_ctrl.is_active:
+        # pre-open preset.  Summer mode ignores the window entirely.
+        if self._window_ctrl.is_active or self._summer_active:
             _LOGGER.debug("Window action skipped: window mode already active")
             return
 
@@ -169,6 +171,8 @@ class PresetMixin:
     @callback
     def _async_presence_changed(self, event) -> None:
         """Handle presence sensor state changes."""
+        if self._summer_active:
+            return
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in ("unavailable", "unknown"):
             return
@@ -187,6 +191,8 @@ class PresetMixin:
 
     async def _async_presence_away_action(self, _now) -> None:
         """Switch to AWAY preset after presence-away delay."""
+        if self._summer_active:
+            return
         # Safety: if the controller is already active (e.g. a stale timer fired
         # after a sensor flicker), do not overwrite the saved preset.
         if self._presence_ctrl.is_active:
@@ -302,6 +308,7 @@ class PresetMixin:
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
+        self._summer_guard("preset change")
         if preset_mode not in PRESET_LIST:
             _LOGGER.warning("Unknown preset mode: %s", preset_mode)
             return
@@ -436,6 +443,8 @@ class PresetMixin:
 
     def _effective_setpoint(self) -> float:
         """Calculate the effective setpoint based on HVAC mode and preset."""
+        if self._summer_active:
+            return FROST_PROTECT_C
         if self._hvac_mode == HVACMode.OFF:
             return FROST_PROTECT_C
 

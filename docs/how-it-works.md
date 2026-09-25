@@ -272,6 +272,15 @@ at once; one that is still open (or not reported yet) stays in window mode. With
 this, the only clue after a restart would be the preset name, and a Frost Protection
 the user chose could not be told apart from one the window automation set.
 
+Summer mode sits above all of this. While its switch is on, the regulation cycle is
+replaced by a simple check: is the TRV in heat mode at 5 °C? If not, the command is
+sent again (subject to the normal rate limit; only the command sent when summer mode
+turns on skips it). Room-sensor data is not needed. Service calls that would change
+the proxy raise an error, and the unchanged state is written with `force_update` so
+the frontend drops the value it showed optimistically. Only a definite `on`/`off`
+from the switch changes the lock. `unavailable` is ignored, and the lock is part of
+the stored restore data.
+
 ---
 
 ## Design decisions, briefly

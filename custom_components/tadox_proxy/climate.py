@@ -52,6 +52,7 @@ from .climate_controllers import (
 )
 from .climate_presets import PresetMixin
 from .climate_regulation import RegulationMixin
+from .climate_summer import SummerMixin
 from .const import (
     CONF_AWAY_TARGET,
     CONF_BOOST_DURATION,
@@ -75,6 +76,7 @@ from .const import (
     CONF_PRESENCE_AWAY_DELAY_S,
     CONF_PRESENCE_SENSOR_ID,
     CONF_SENSOR_GRACE_S,
+    CONF_SUMMER_MODE_ENTITY_ID,
     CONF_URGENT_DECREASE_THRESHOLD_C,
     CONF_WINDOW_DELAY_S,
     CONF_WINDOW_SENSOR_ID,
@@ -123,7 +125,9 @@ async def async_setup_entry(
     async_add_entities([entity])
 
 
-class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, ClimateEntity, RestoreEntity):
+class TadoXProxyClimate(
+    RegulationMixin, PresetMixin, SummerMixin, CoordinatorEntity, ClimateEntity, RestoreEntity
+):
     """Proxy climate entity that controls a Tado X TRV via feedforward + PI."""
 
     _attr_has_entity_name = True
@@ -197,6 +201,10 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
         # State-machine controllers (hold their own timer + saved-state)
         self._window_ctrl = WindowAutomationController()
         self._presence_ctrl = PresenceAutomationController()
+
+        # Summer mode: thermostat locked at 5 °C (see climate_summer.py)
+        self._summer_active: bool = False
+        self._summer_bypass_rate_limit: bool = False
 
         # Diagnostics
         self._last_result = None
@@ -353,6 +361,11 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
         if self._preset_mode == PRESET_COMFORT:
             self._target_temp = self._comfort_target()
 
+        # Summer mode overrides everything restored above.
+        summer_on = self._startup_summer(
+            persisted.summer_active if persisted is not None else False
+        )
+
         # Initialize baseline for follow-tado from current tado setpoint so
         # the feature works immediately without waiting for the first regulation.
         tado_sp = self.coordinator.data.get("tado_setpoint")
@@ -394,12 +407,23 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
                     self._async_presence_changed,
                 )
             )
+        summer_entity = self._config_entry.options.get(CONF_SUMMER_MODE_ENTITY_ID)
+        if summer_entity:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass,
+                    [summer_entity],
+                    self._async_summer_changed,
+                )
+            )
 
         # Reconcile presence first: if it restores while window mode is still
         # active, it updates the window's saved state (see
         # _restore_presence_state), which the window reconciliation then uses.
-        self._startup_reconcile_presence(presence_sensor, persisted)
-        self._startup_reconcile_window(window_sensor)
+        # Summer mode ignores window and presence entirely.
+        if not summer_on:
+            self._startup_reconcile_presence(presence_sensor, persisted)
+            self._startup_reconcile_window(window_sensor)
 
         # Start periodic regulation
         self.async_on_remove(
@@ -511,6 +535,7 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
             boost_saved=SavedState(
                 preset=self._boost_saved_preset, temp=self._boost_saved_temp
             ),
+            summer_active=self._summer_active,
         )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -554,6 +579,22 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
     @callback
     def _async_tado_state_changed(self, event) -> None:
         """Detect physical thermostat changes and follow them if enabled."""
+        if self._summer_active:
+            # Summer mode: never follow – push the TRV back to 5 °C instead
+            # (the regulation cycle honours the command rate limit).
+            new_state = event.data.get("new_state")
+            old_state = event.data.get("old_state")
+            if new_state is not None and (
+                old_state is None
+                or new_state.state != old_state.state
+                or new_state.attributes.get("temperature")
+                != old_state.attributes.get("temperature")
+            ):
+                self.hass.async_create_task(
+                    self._async_regulation_cycle(trigger="summer_trv_changed")
+                )
+            return
+
         if not self._config_entry.options.get(CONF_FOLLOW_TADO_INPUT, False):
             return
 
@@ -611,6 +652,7 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target HVAC mode."""
+        self._summer_guard("HVAC mode change")
         if hvac_mode not in self._attr_hvac_modes:
             return
         # Manual HVAC change clears any active window-open state so the user's
@@ -680,6 +722,7 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
         NOT change the stored comfort target – use the Comfort number entity
         or the options flow for that.
         """
+        self._summer_guard("temperature change")
         temp = kwargs.get(ATTR_TEMPERATURE)
         if temp is None:
             return
@@ -765,6 +808,8 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
     @property
     def icon(self) -> str:
         """Return preset-specific icon so the primary entity icon reflects the active preset."""
+        if self._summer_active:
+            return "mdi:weather-sunny"
         if self._hvac_mode == HVACMode.OFF:
             return "mdi:power"
         return {
@@ -794,6 +839,7 @@ class TadoXProxyClimate(RegulationMixin, PresetMixin, CoordinatorEntity, Climate
             "window_close_delay_active": self._window_ctrl.close_delay_active,
             "presence_away_active": self._presence_ctrl.is_active,
             "sensor_degraded": self._sensor_degraded,
+            "summer_mode_active": self._summer_active,
             "overlay_refresh_s": self._overlay_refresh_s,
         }
 

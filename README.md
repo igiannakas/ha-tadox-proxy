@@ -1,7 +1,7 @@
 # Tado X Proxy Thermostat
 
 [![Tests](https://github.com/kinimodb/ha-tadox-proxy/actions/workflows/tests.yml/badge.svg)](https://github.com/kinimodb/ha-tadox-proxy/actions/workflows/tests.yml)
-![Version](https://img.shields.io/badge/version-1.1.9-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![HA](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-41BDF5)
 
 **Read this page in your language:**
@@ -119,6 +119,8 @@ Beyond the temperature correction, you get:
   when someone returns. Optional.
 - **Manual override** — turn the dial on the radiator thermostat itself and, if you
   enable it, the proxy follows you instead of fighting you.
+- **Summer mode** — one switch turns the heating off in every room and locks it until
+  you switch it back. Optional.
 
 Details for all of these are in the [settings reference](docs/settings.md).
 

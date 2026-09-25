@@ -34,11 +34,13 @@
         "description": "Configure the proxy thermostat behavior.",
         "data": {
           "external_temperature_entity_id": "External temperature sensor",
-          "boost_duration": "Boost duration"
+          "boost_duration": "Boost duration",
+          "summer_mode_entity_id": "Summer mode switch"
         },
         "data_description": {
           "external_temperature_entity_id": "A temperature sensor placed in the room, away from the radiator. Use the same sensor for every entry belonging to that room.",
-          "boost_duration": "How long boost mode stays active before returning to the previous preset."
+          "boost_duration": "How long boost mode stays active before returning to the previous preset.",
+          "summer_mode_entity_id": "Optional on/off helper (input boolean) shared by all thermostats. While it is on, this thermostat is locked at 5 °C: window, presence and every change from the UI or automations are ignored. When it turns off, the thermostat returns to Comfort."
         },
         "sections": {
           "window_sensor": {
@@ -192,6 +194,11 @@
       "follow_tado_input": {
         "name": "Follow physical thermostat"
       }
+    }
+  },
+  "exceptions": {
+    "summer_mode_locked": {
+      "message": "Summer mode is on – this thermostat is locked at 5 °C."
     }
   }
 }

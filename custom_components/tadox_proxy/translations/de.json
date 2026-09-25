@@ -34,11 +34,13 @@
         "description": "Verhalten des Proxy-Thermostats konfigurieren.",
         "data": {
           "external_temperature_entity_id": "Externer Temperatursensor",
-          "boost_duration": "Boost-Dauer"
+          "boost_duration": "Boost-Dauer",
+          "summer_mode_entity_id": "Sommermodus-Schalter"
         },
         "data_description": {
           "external_temperature_entity_id": "Ein Temperatursensor im Raum, mit Abstand zum Heizkörper. Für alle Einträge desselben Raums denselben Sensor verwenden.",
-          "boost_duration": "Wie lange der Boost-Modus aktiv bleibt, bevor zum vorherigen Preset zurückgekehrt wird."
+          "boost_duration": "Wie lange der Boost-Modus aktiv bleibt, bevor zum vorherigen Preset zurückgekehrt wird.",
+          "summer_mode_entity_id": "Optionaler Ein/Aus-Helfer (Input-Boolean), den alle Thermostate gemeinsam nutzen. Solange er an ist, ist dieses Thermostat auf 5 °C gesperrt: Fenster, Präsenz und jede Änderung über die Oberfläche oder Automationen werden ignoriert. Beim Ausschalten kehrt das Thermostat zu Komfort zurück."
         },
         "sections": {
           "window_sensor": {
@@ -192,6 +194,11 @@
       "follow_tado_input": {
         "name": "Physischem Thermostat folgen"
       }
+    }
+  },
+  "exceptions": {
+    "summer_mode_locked": {
+      "message": "Sommermodus ist aktiv – dieses Thermostat ist auf 5 °C gesperrt."
     }
   }
 }

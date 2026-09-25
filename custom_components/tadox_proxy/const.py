@@ -39,6 +39,9 @@ CONF_PRESENCE_SENSOR_ID = "presence_sensor_id"
 CONF_PRESENCE_AWAY_DELAY_S = "presence_away_delay_s"
 CONF_PRESENCE_HOME_DELAY_S = "presence_home_delay_s"
 
+# Summer mode (input_boolean / binary_sensor) – optional global lock
+CONF_SUMMER_MODE_ENTITY_ID = "summer_mode_entity_id"
+
 # Custom preset name (not a HA built-in)
 PRESET_FROST_PROTECTION = "frost_protection"
 

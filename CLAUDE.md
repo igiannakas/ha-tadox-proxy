@@ -17,6 +17,7 @@ HA-frei (direkt testbar):          HA-Bridge:
 parameters.py → regulation.py      climate.py (Entity, Mixin-Komposition)
 climate_controllers.py             ├─ climate_regulation.py (RegulationMixin)
                                    ├─ climate_presets.py (PresetMixin)
+                                   ├─ climate_summer.py (SummerMixin)
                                    └─ __init__.py (Coordinator), config_flow.py
 ```
 
@@ -30,6 +31,7 @@ Neue Features immer erst in den HA-freien Modulen (`parameters.py`, `regulation.
 - `climate.py` – HA ClimateEntity: Properties, Lifecycle, Config, Follow-Tado
 - `climate_regulation.py` – RegulationMixin: Regelzyklus, Rate-Limiting, TRV-Kommandos
 - `climate_presets.py` – PresetMixin: Preset-Wechsel, Boost-Timer, Window/Presence-Aktionen
+- `climate_summer.py` – SummerMixin: Sommermodus-Sperre (5 °C, Service-Calls abgelehnt, TRV-Durchsetzung)
 - `number.py` – NumberEntity für Preset-Temperaturen
 - `sensor.py` – Boost-Restzeit-Sensor
 - `binary_sensor.py` – Sensor-Degraded-Diagnose
@@ -45,6 +47,10 @@ Neue Features immer erst in den HA-freien Modulen (`parameters.py`, `regulation.
 ```bash
 python -m pytest tests/ -v
 ```
+
+- `tests/ha_harness.py` stellt einen minimalen HA-Stub bereit, damit E2E-Tests den echten
+  `TadoXProxyClimate`-Code ausführen (`test_frost_preset_persistence.py`, `test_summer_mode.py`).
+  Benötigt Python ≥ 3.11 (`asyncio.timeout`), CI nutzt 3.12.
 
 - Tests umgehen `__init__.py` via `importlib.util.spec_from_file_location` (HA-Abhängigkeit).
 - **Vor jedem Commit müssen alle Tests grün sein.**

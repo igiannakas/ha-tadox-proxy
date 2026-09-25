@@ -14,12 +14,13 @@ Everything you can see, switch, and adjust — looked up rather than read start 
 1. [Presets](#presets)
 2. [Entities you get](#entities-you-get)
 3. [Window and presence detection](#window-and-presence-detection)
-4. [Turning the thermostat off](#turning-the-thermostat-off)
-5. [Following the physical thermostat](#following-the-physical-thermostat)
-6. [When the sensor drops out](#when-the-sensor-drops-out)
-7. [Adjustable settings](#adjustable-settings)
-8. [Diagnostic attributes](#diagnostic-attributes)
-9. [Supported radiators](#supported-radiators)
+4. [Summer mode](#summer-mode)
+5. [Turning the thermostat off](#turning-the-thermostat-off)
+6. [Following the physical thermostat](#following-the-physical-thermostat)
+7. [When the sensor drops out](#when-the-sensor-drops-out)
+8. [Adjustable settings](#adjustable-settings)
+9. [Diagnostic attributes](#diagnostic-attributes)
+10. [Supported radiators](#supported-radiators)
 
 ---
 
@@ -104,6 +105,41 @@ template binary sensor first.
   (or the one you picked while away). A Boost is never restarted — it comes back as
   Comfort. A Boost that was running when you left is cancelled, and the preset from
   before the Boost is the one that comes back.
+
+---
+
+## Summer mode
+
+One switch that turns the heating off for the whole summer and locks it.
+
+Create an on/off helper (**Settings → Devices & Services → Helpers → Toggle**, for
+example `input_boolean.summer_mode`). Then, for every thermostat, open
+**Configure** and choose it as **Summer mode switch**. All thermostats can share
+the same switch.
+
+While the switch is **on**:
+
+- The radiator thermostat is held at **5 °C** in heat mode, so its valve stays shut.
+- The proxy shows Frost Protection at 5 °C with a sun icon.
+- Every change is refused: presets, the temperature slider, and turning it on or
+  off. The card shows an error ("Summer mode is on – this thermostat is locked at
+  5 °C") and snaps back to 5 °C. Automations and scripts that try to change it
+  get the same error.
+- Window and presence detection are ignored, and a running Boost is cancelled.
+- If someone turns the dial on the radiator thermostat or changes it in the Tado
+  app, the proxy sets it back to 5 °C within about a minute. It still respects the
+  minimum time between commands, which protects the batteries.
+- It stays locked through a Home Assistant restart. If the switch is briefly
+  `unavailable`, nothing changes.
+
+When the switch turns **off**, every thermostat goes to **Comfort**. An open window
+or an empty house is picked up again straight away (after the usual delays).
+
+Preset temperatures (the number entities) can still be edited during summer mode.
+They only take effect once summer mode ends.
+
+If your own automations or scripts change the thermostats, add a condition on the
+summer switch (or `continue_on_error: true`) so they do not stop with an error.
 
 ---
 
@@ -229,6 +265,7 @@ something is wrong or when you are curious what the integration is thinking.
 | `window_close_delay_active` | Waiting after a window closed |
 | `presence_away_active` | Presence detection has taken over |
 | `sensor_degraded` | Room sensor missing, running on the last reading |
+| `summer_mode_active` | Summer mode is locking the thermostat at 5 °C |
 | `is_saturated` | The correction has hit its limit and cannot push harder |
 
 While the sensor is missing, `room_temp_last_valid_c` and
