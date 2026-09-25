@@ -10,6 +10,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import (
     CONF_EXTERNAL_TEMPERATURE_ENTITY_ID,
+    CONF_SCHEDULE_ENTITY_ID,
     CONF_SOURCE_ENTITY_ID,
     CONF_SUMMER_MODE_ENTITY_ID,
 )
@@ -44,9 +45,10 @@ async def async_get_config_entry_diagnostics(
     ext_temp_id = _effective_entity_id(config_entry, CONF_EXTERNAL_TEMPERATURE_ENTITY_ID)
 
     summer_id = config_entry.options.get(CONF_SUMMER_MODE_ENTITY_ID)
+    schedule_id = config_entry.options.get(CONF_SCHEDULE_ENTITY_ID)
 
     selected_entities: list[str] = [
-        eid for eid in [source_entity_id, ext_temp_id, summer_id] if eid
+        eid for eid in [source_entity_id, ext_temp_id, summer_id, schedule_id] if eid
     ]
 
     # Proxy entities created by this config entry
@@ -74,6 +76,7 @@ async def async_get_config_entry_diagnostics(
             "source_entity_id": source_entity_id,
             "external_temperature_entity_id": ext_temp_id,
             "summer_mode_entity_id": summer_id,
+            "schedule_entity_id": schedule_id,
         },
         "proxy_entities": proxy_entities,
         "states": {eid: _state_snapshot(hass, eid) for eid in selected_entities},

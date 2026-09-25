@@ -701,9 +701,13 @@ class TestBoostRestoreSetsEndTimestamp:
         )
 
     def test_preset_switch_sets_boost_end_ts(self):
-        """The normal boost entry point must keep setting the timestamp too."""
+        """The normal boost entry point must keep setting the timestamp too.
+
+        async_set_preset_mode delegates to _route_preset (shared with the
+        schedule), which is where boost is started.
+        """
         assert _method_assigns_attr(
-            _CLIMATE_PRESETS_PY, "async_set_preset_mode", "_boost_end_ts"
+            _CLIMATE_PRESETS_PY, "_route_preset", "_boost_end_ts"
         )
 
 
@@ -912,7 +916,8 @@ class TestComfortTargetRoutedThroughHelper:
         assert _method_calls(_CLIMATE_PRESETS_PY, "_restore_presence_state", "_comfort_target")
 
     def test_set_preset_mode_calls_helper(self):
-        assert _method_calls(_CLIMATE_PRESETS_PY, "async_set_preset_mode", "_comfort_target")
+        # async_set_preset_mode delegates to _route_preset
+        assert _method_calls(_CLIMATE_PRESETS_PY, "_route_preset", "_comfort_target")
 
     def test_get_preset_target_calls_helper(self):
         assert _method_calls(_CLIMATE_PRESETS_PY, "_get_preset_target", "_comfort_target")

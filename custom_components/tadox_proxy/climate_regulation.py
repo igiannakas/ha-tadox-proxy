@@ -21,9 +21,10 @@ class RegulationMixin:
         bs = getattr(self.coordinator, "binary_sensor_entity", None)
         if bs is not None:
             bs.async_write_ha_state()
-        se = getattr(self.coordinator, "sensor_entity", None)
-        if se is not None:
-            se.async_write_ha_state()
+        for attr in ("sensor_entity", "schedule_sensor_entity"):
+            se = getattr(self.coordinator, attr, None)
+            if se is not None and se.hass is not None:
+                se.async_write_ha_state()
 
     async def _async_regulation_cycle_timer(self, _now) -> None:
         """Periodic timer callback."""

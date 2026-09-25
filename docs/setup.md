@@ -171,8 +171,8 @@ left to do.
 Alongside the proxy thermostat, every entry creates a few extras. All of them are
 optional and you can ignore them until you need them.
 
-- **Preset buttons** — Comfort, Eco, Away, Boost, Frost Protection.
-- **A number entity per preset**, so you can set what "Eco" means to you and use it
+- **Preset buttons** — Comfort, Night, Away, Boost, Frost Protection.
+- **A number entity per preset**, so you can set what "Night" means to you and use it
   in automations.
 - **A boost timer sensor** showing how many minutes of boost are left.
 - **A warning sensor** that turns on if your room sensor stops reporting.

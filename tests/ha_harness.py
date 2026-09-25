@@ -161,6 +161,7 @@ e2e = pytest.mark.skipif(
 WINDOW = "binary_sensor.window"
 PRESENCE = "binary_sensor.presence"
 SUMMER = "input_boolean.summer_mode"
+SCHEDULE = "input_select.room_schedule"
 TRV = "climate.trv"
 
 
@@ -176,6 +177,10 @@ class _Hass:
         self.states = types.SimpleNamespace(get=self.states_by_id.get)
         self.service_calls: list[tuple[str, str, dict]] = []
         self.services = types.SimpleNamespace(async_call=self._async_call)
+        # When keep_tasks is True, created tasks are queued for drain_tasks()
+        # instead of being discarded.
+        self.keep_tasks = False
+        self.tasks: list = []
 
     def set(self, entity_id, state, attributes=None):
         self.states_by_id[entity_id] = _State(state, attributes)
@@ -184,7 +189,10 @@ class _Hass:
         self.service_calls.append((domain, service, dict(service_data or {})))
 
     def async_create_task(self, coro, *args, **kwargs):
-        coro.close()
+        if self.keep_tasks:
+            self.tasks.append(coro)
+        else:
+            coro.close()
 
 
 class _Entry:
@@ -217,7 +225,8 @@ _BASE_OPTIONS = {
 }
 
 
-def _make_entity(options=None, *, window=True, presence=False, summer=False):
+def _make_entity(options=None, *, window=True, presence=False, summer=False,
+                 schedule=False):
     opts = dict(_BASE_OPTIONS)
     if window:
         opts["window_sensor_id"] = WINDOW
@@ -225,6 +234,8 @@ def _make_entity(options=None, *, window=True, presence=False, summer=False):
         opts["presence_sensor_id"] = PRESENCE
     if summer:
         opts["summer_mode_entity_id"] = SUMMER
+    if schedule:
+        opts["schedule_entity_id"] = SCHEDULE
     opts.update(options or {})
     ent = _climate.TadoXProxyClimate(
         coordinator=_Coordinator(), unique_id="u", config_entry=_Entry(opts)
@@ -290,3 +301,9 @@ def _restart_from(old, new):
 async def _select_preset(ent, preset):
     await ent.async_set_preset_mode(preset)
 
+
+
+def drain_tasks(ent) -> None:
+    """Run the tasks an entity queued via hass.async_create_task (keep_tasks)."""
+    while ent.hass.tasks:
+        _run(ent.hass.tasks.pop(0))

@@ -272,6 +272,16 @@ at once; one that is still open (or not reported yet) stays in window mode. With
 this, the only clue after a restart would be the preset name, and a Frost Protection
 the user chose could not be told apart from one the window automation set.
 
+Schedule following adds one more layer. The schedule helper's value is the room's
+base preset; priority is summer mode → open window → presence away → manual override
+→ schedule. Schedule changes are routed through the same path as preset changes, so
+while a window or presence automation is active they only update the preset that
+automation will restore. A manual change starts an override that ends at the next
+change of the helper or after the configured duration, whichever comes first; manual
+Away is sticky. The override (and its end time) is part of the restore data, so a
+restart re-arms the timer, ends an override that expired while Home Assistant was
+down, and ends it if the schedule moved on in the meantime.
+
 Summer mode sits above all of this. While its switch is on, the regulation cycle is
 replaced by a simple check: is the TRV in heat mode at 5 °C? If not, the command is
 sent again (subject to the normal rate limit; only the command sent when summer mode

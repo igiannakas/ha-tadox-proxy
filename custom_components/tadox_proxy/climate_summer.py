@@ -11,7 +11,8 @@ Summer mode is driven by an optional on/off helper (usually an
 - a change on the TRV itself (dial / Tado app) is pushed back to 5 °C on the
   next regulation cycle, honouring the command rate limit.
 
-When the helper turns off, the thermostat returns to COMFORT and the window /
+When the helper turns off, the thermostat returns to the schedule preset (or
+COMFORT without a schedule) and the window /
 presence sensors are evaluated again.
 """
 
@@ -19,7 +20,7 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.climate import PRESET_COMFORT, HVACMode
+from homeassistant.components.climate import HVACMode
 from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
 
@@ -108,6 +109,7 @@ class SummerMixin:
             self._boost_cancel()
             self._boost_cancel = None
         self._boost_end_ts = 0.0
+        self._schedule_ctrl.clear_override()
         self._hvac_mode = HVACMode.HEAT
         self._preset_mode = PRESET_FROST_PROTECTION
         self._target_temp = SUMMER_TARGET_C
@@ -115,16 +117,16 @@ class SummerMixin:
         _LOGGER.info("Summer mode on: thermostat locked at %.1f °C", SUMMER_TARGET_C)
 
     def _exit_summer_mode(self, rearm_sensors: bool) -> None:
-        """Unlock the thermostat and return to COMFORT."""
+        """Unlock the thermostat and return to the schedule (else COMFORT)."""
         self._summer_active = False
         self._summer_bypass_rate_limit = False
         self._hvac_mode = HVACMode.HEAT
-        self._preset_mode = PRESET_COMFORT
-        self._target_temp = self._comfort_target()
+        self._preset_mode = self._fallback_preset()
+        self._target_temp = self._get_preset_target(self._preset_mode)
         # Start regulation fresh: no integral from before summer, dt = 0.
         self._reg_state = RegulationState()
         self._last_regulation_ts = 0.0
-        _LOGGER.info("Summer mode off: returning to comfort")
+        _LOGGER.info("Summer mode off: returning to %s", self._preset_mode)
         if rearm_sensors:
             self._summer_rearm_sensors()
 

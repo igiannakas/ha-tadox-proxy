@@ -27,6 +27,8 @@ from .const import (
     CONF_PRESENCE_AWAY_DELAY_S,
     CONF_PRESENCE_HOME_DELAY_S,
     CONF_PRESENCE_SENSOR_ID,
+    CONF_SCHEDULE_ENTITY_ID,
+    CONF_SCHEDULE_OVERRIDE_MIN,
     CONF_SENSOR_GRACE_S,
     CONF_SOURCE_ENTITY_ID,
     CONF_SUMMER_MODE_ENTITY_ID,
@@ -111,6 +113,7 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
                 CONF_WINDOW_SENSOR_ID,
                 CONF_PRESENCE_SENSOR_ID,
                 CONF_SUMMER_MODE_ENTITY_ID,
+                CONF_SCHEDULE_ENTITY_ID,
             ):
                 if key not in cleaned:
                     merged.pop(key, None)
@@ -202,6 +205,32 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
                 presence_section_schema, {CONF_PRESENCE_SENSOR_ID: presence_sensor}
             )
 
+        # --- Build schedule section schema ---
+        schedule_section_schema = vol.Schema(
+            {
+                # A helper whose state is a preset name (comfort / night /
+                # away / frost_protection), set by a scheduler.
+                vol.Optional(CONF_SCHEDULE_ENTITY_ID): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["input_select", "select"])
+                ),
+                vol.Required(
+                    CONF_SCHEDULE_OVERRIDE_MIN,
+                    default=opts.get(CONF_SCHEDULE_OVERRIDE_MIN, 0),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, max=1440, step=5,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="min",
+                    )
+                ),
+            }
+        )
+        schedule_entity = opts.get(CONF_SCHEDULE_ENTITY_ID)
+        if schedule_entity:
+            schedule_section_schema = self.add_suggested_values_to_schema(
+                schedule_section_schema, {CONF_SCHEDULE_ENTITY_ID: schedule_entity}
+            )
+
         # --- Main options schema with sections ---
         options_schema = vol.Schema(
             {
@@ -239,6 +268,12 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
                 # Section: Presence sensor
                 vol.Required("presence_sensor"): section(
                     presence_section_schema,
+                    {"collapsed": True},
+                ),
+
+                # Section: Schedule
+                vol.Required("schedule"): section(
+                    schedule_section_schema,
                     {"collapsed": True},
                 ),
 

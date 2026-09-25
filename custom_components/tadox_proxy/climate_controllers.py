@@ -16,10 +16,14 @@ Architecture
   ``window_startup_action`` / ``presence_startup_action`` – pure startup
   decisions used by ``async_added_to_hass``
 - ``resolve_summer_state`` / ``summer_enforcement_needed`` – summer-mode lock
+- ``ScheduleController`` / ``parse_schedule_preset`` – follow an external
+  schedule helper, with manual overrides that end at the next schedule change
+  or after a configurable time (whichever comes first)
 """
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -38,6 +42,8 @@ _CallLaterFn = Callable[[Any, float, Callable], _CancelFn]
 PRESET_COMFORT_NAME = "comfort"
 PRESET_BOOST_NAME = "boost"
 PRESET_FROST_NAME = "frost_protection"
+PRESET_ECO_NAME = "eco"
+PRESET_AWAY_NAME = "away"
 _UNAVAILABLE_STATES = ("unavailable", "unknown")
 
 
@@ -414,6 +420,11 @@ class PersistedAutomationState:
     # Summer mode was locking the thermostat (used to leave summer mode
     # correctly when the switch was turned off while HA was down).
     summer_active: bool = False
+    # Schedule following: last valid schedule preset and a manual override.
+    schedule_preset: str | None = None
+    schedule_override_active: bool = False
+    schedule_override_until: float | None = None
+    schedule_override_sticky: bool = False
 
     VERSION = 1
 
@@ -431,6 +442,10 @@ class PersistedAutomationState:
             "boost_saved_preset": self.boost_saved.preset,
             "boost_saved_temp": self.boost_saved.temp,
             "summer_active": self.summer_active,
+            "schedule_preset": self.schedule_preset,
+            "schedule_override_active": self.schedule_override_active,
+            "schedule_override_until": self.schedule_override_until,
+            "schedule_override_sticky": self.schedule_override_sticky,
         }
 
     @classmethod
@@ -455,6 +470,10 @@ class PersistedAutomationState:
                 temp=_as_opt_float(data.get("boost_saved_temp")),
             ),
             summer_active=data.get("summer_active") is True,
+            schedule_preset=_as_opt_str(data.get("schedule_preset")),
+            schedule_override_active=data.get("schedule_override_active") is True,
+            schedule_override_until=_as_opt_float(data.get("schedule_override_until")),
+            schedule_override_sticky=data.get("schedule_override_sticky") is True,
         )
 
 
@@ -602,6 +621,149 @@ def summer_enforcement_needed(
     if trv_setpoint is None:
         return True
     return abs(trv_setpoint - target_c) >= tolerance_c
+
+
+# ---------------------------------------------------------------------------
+# Schedule following
+# ---------------------------------------------------------------------------
+
+# Presets a schedule may ask for.  BOOST (a short one-off) and manual mode are
+# deliberately excluded.  "night" is the user-facing name of the eco preset.
+_SCHEDULE_PRESETS = {
+    "comfort": "comfort",
+    "eco": PRESET_ECO_NAME,
+    "night": PRESET_ECO_NAME,
+    "away": PRESET_AWAY_NAME,
+    "frost_protection": PRESET_FROST_NAME,
+    "frost": PRESET_FROST_NAME,
+}
+
+
+def parse_schedule_preset(state: str | None) -> str | None:
+    """Map a schedule helper state to an internal preset name.
+
+    Case and spaces are ignored ("Night", "Frost Protection").  Returns None
+    for anything that is not a schedulable preset, including
+    ``unavailable`` / ``unknown`` – callers then keep the last valid value.
+    """
+    if not isinstance(state, str):
+        return None
+    key = state.strip().lower().replace(" ", "_").replace("-", "_")
+    return _SCHEDULE_PRESETS.get(key)
+
+
+class ScheduleController:
+    """Tracks the schedule preset and a manual override of it.
+
+    Override semantics:
+
+    - A manual change starts an override.  It ends at the next change of the
+      schedule preset, or after ``duration_min`` minutes when that is > 0 –
+      whichever comes first.
+    - A *sticky* override (manual Away) ignores schedule changes and has no
+      timer; it only ends when the user changes the preset or resumes.
+    """
+
+    def __init__(self) -> None:
+        self.schedule_preset: str | None = None
+        self.override_active: bool = False
+        self.override_until: float | None = None
+        self.override_sticky: bool = False
+        self._timer: _CancelFn | None = None
+
+    # ------------------------------------------------------------------
+    def schedule_changed(self, preset: str | None) -> bool:
+        """Record a schedule value.  Returns True when it must be applied now."""
+        if preset is None or preset == self.schedule_preset:
+            return False
+        self.schedule_preset = preset
+        if self.override_active and not self.override_sticky:
+            _LOGGER.debug("Schedule changed to %s – override ended", preset)
+            self.clear_override()
+        return not self.override_active
+
+    def start_override(
+        self,
+        hass: Any,
+        duration_min: float,
+        now: float,
+        on_expire: Callable,
+        *,
+        sticky: bool = False,
+        call_later: _CallLaterFn | None = None,
+    ) -> None:
+        """Start (or restart) a manual override."""
+        self.cancel_timer()
+        self.override_active = True
+        self.override_sticky = sticky
+        if sticky or duration_min <= 0:
+            self.override_until = None
+            return
+        delay_s = duration_min * 60
+        self.override_until = now + delay_s
+        _cl = call_later or _get_call_later()
+        self._timer = _cl(hass, delay_s, on_expire)
+
+    def rearm(
+        self,
+        hass: Any,
+        now: float,
+        on_expire: Callable,
+        *,
+        call_later: _CallLaterFn | None = None,
+    ) -> bool:
+        """Re-arm the override timer after a restart.
+
+        Returns True when the override already expired (it is then cleared and
+        the caller should return to the schedule).
+        """
+        if not self.override_active or self.override_until is None:
+            return False
+        remaining = self.override_until - now
+        if remaining <= 0:
+            self.clear_override()
+            return True
+        self.cancel_timer()
+        _cl = call_later or _get_call_later()
+        self._timer = _cl(hass, remaining, on_expire)
+        return False
+
+    def timer_fired(self) -> None:
+        """Mark the override as ended by its own timer."""
+        self._timer = None
+        self.override_active = False
+        self.override_until = None
+        self.override_sticky = False
+
+    def clear_override(self) -> None:
+        """End any override (resume the schedule)."""
+        self.cancel_timer()
+        self.override_active = False
+        self.override_until = None
+        self.override_sticky = False
+
+    def cancel_timer(self) -> None:
+        """Cancel the expiry timer but keep the override state."""
+        if self._timer is not None:
+            self._timer()
+            self._timer = None
+
+    def remaining_minutes(self, now: float) -> int:
+        """Minutes left on a timed override (0 when none / untimed)."""
+        if not self.override_active or self.override_until is None:
+            return 0
+        return max(0, math.ceil((self.override_until - now) / 60))
+
+    def load(self, persisted: PersistedAutomationState | None) -> None:
+        """Restore state (without timers) from a persisted snapshot."""
+        if persisted is None:
+            return
+        self.schedule_preset = persisted.schedule_preset
+        self.override_active = persisted.schedule_override_active
+        self.override_until = (
+            persisted.schedule_override_until if self.override_active else None
+        )
+        self.override_sticky = self.override_active and persisted.schedule_override_sticky
 
 
 # ---------------------------------------------------------------------------

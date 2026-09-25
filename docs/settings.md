@@ -14,13 +14,14 @@ Everything you can see, switch, and adjust — looked up rather than read start 
 1. [Presets](#presets)
 2. [Entities you get](#entities-you-get)
 3. [Window and presence detection](#window-and-presence-detection)
-4. [Summer mode](#summer-mode)
-5. [Turning the thermostat off](#turning-the-thermostat-off)
-6. [Following the physical thermostat](#following-the-physical-thermostat)
-7. [When the sensor drops out](#when-the-sensor-drops-out)
-8. [Adjustable settings](#adjustable-settings)
-9. [Diagnostic attributes](#diagnostic-attributes)
-10. [Supported radiators](#supported-radiators)
+4. [Schedule](#schedule)
+5. [Summer mode](#summer-mode)
+6. [Turning the thermostat off](#turning-the-thermostat-off)
+7. [Following the physical thermostat](#following-the-physical-thermostat)
+8. [When the sensor drops out](#when-the-sensor-drops-out)
+9. [Adjustable settings](#adjustable-settings)
+10. [Diagnostic attributes](#diagnostic-attributes)
+11. [Supported radiators](#supported-radiators)
 
 ---
 
@@ -29,11 +30,12 @@ Everything you can see, switch, and adjust — looked up rather than read start 
 | Preset | Default | What it is for |
 |---|---|---|
 | **Comfort** | 20.0 °C | Your normal temperature |
-| **Eco** | 17.0 °C | Saving energy |
+| **Night** | 17.0 °C | Sleeping hours. Internally this preset is still called `eco`, so scripts and voice assistants keep working |
 | **Boost** | 25.0 °C | A short burst of heat. Reverts by itself after 30 minutes |
 | **Away** | 17.0 °C | Nobody home |
 | **Frost Protection** | 7.0 °C | Just enough to stop pipes freezing |
 | **Manual** | — | You picked a temperature yourself, no preset active |
+| **Schedule** | — | Only when a schedule is set up. Picking it hands the room back to the schedule |
 
 Every preset temperature is its own entity, named like
 `number.<your_name>_comfort_temperature`. You can change what each preset means in
@@ -58,6 +60,8 @@ Each entry creates:
 | `climate.<name>` | The thermostat you actually use |
 | `number.<name>_comfort_temperature` | What Comfort means, and one of these per preset |
 | `sensor.<name>_boost_remaining` | Minutes of boost left. Shows 0 when boost is off |
+| `sensor.<name>_schedule_override_remaining` | Minutes before a manual change hands back to the schedule. Unavailable without a schedule |
+| `button.<name>_resume_schedule` | Hands the room back to the schedule. Unavailable without a schedule |
 | `binary_sensor.<name>_sensor_degraded` | Turns on when your room sensor stops reporting |
 | `switch.<name>_follow_physical_thermostat` | Off by default, see [below](#following-the-physical-thermostat) |
 
@@ -108,6 +112,50 @@ template binary sensor first.
 
 ---
 
+## Schedule
+
+The proxy can follow a schedule. It does not keep the schedule itself: it follows an
+**input select** helper that your scheduler (for example Scheduler card + Scheduler
+component) sets.
+
+1. Create an input select per room, e.g. `input_select.living_room_schedule`, with the
+   options `comfort`, `night`, `away` and `frost_protection` (capitals and spaces
+   are fine: "Night", "Frost Protection").
+2. In your scheduler, give each time slot an action that selects the option for that
+   slot. Use **time ranges that cover the whole day** (e.g. 00:00–06:30 night,
+   06:30–08:30 comfort …) rather than single "at 06:30" triggers — then the scheduler
+   also catches up after a Home Assistant restart.
+3. In the thermostat's **Configure → Schedule**, pick the helper and set the
+   **Override duration**.
+
+What happens:
+
+- The room is in whatever preset the helper says.
+- **Manual changes** — a preset, the temperature slider, Boost, your scripts, or the
+  dial on the radiator when "follow physical thermostat" is on — override the
+  schedule. The override ends at the next **change** of the schedule, or after the
+  override duration, whichever comes first. With a duration of 0 it lasts until the
+  schedule changes.
+- **Away** picked by hand stays until you change it; the schedule does not end it.
+- **Back to the schedule:** pick **Schedule** in the preset list, press the
+  **Resume schedule** button, or pick the preset the schedule is currently asking for.
+- **Boost** ends back on the schedule.
+- **Open window, nobody home, summer mode** all win over the schedule. Schedule
+  changes in the meantime are remembered: when the window closes, you come home or
+  summer mode ends, the room goes to what the schedule says *now*.
+- **Turning the thermostat off** is not an override. Turning it back on returns to
+  the schedule.
+- Everything survives a restart, including an override and its remaining time.
+
+Two blocks in a row with the same preset do not end an override — the helper does
+not change between them.
+
+The `schedule_override_remaining` sensor counts down a timed override. The thermostat
+also shows `schedule_preset`, `schedule_override_active` and `schedule_override_until`
+as attributes, so a card can show "Night (schedule)" or "Comfort — override".
+
+---
+
 ## Summer mode
 
 One switch that turns the heating off for the whole summer and locks it.
@@ -132,7 +180,8 @@ While the switch is **on**:
 - It stays locked through a Home Assistant restart. If the switch is briefly
   `unavailable`, nothing changes.
 
-When the switch turns **off**, every thermostat goes to **Comfort**. An open window
+When the switch turns **off**, every thermostat goes to its **schedule** (or
+**Comfort** if it has none). An open window
 or an empty house is picked up again straight away (after the usual delays).
 
 Preset temperatures (the number entities) can still be edited during summer mode.
@@ -266,6 +315,9 @@ something is wrong or when you are curious what the integration is thinking.
 | `presence_away_active` | Presence detection has taken over |
 | `sensor_degraded` | Room sensor missing, running on the last reading |
 | `summer_mode_active` | Summer mode is locking the thermostat at 5 °C |
+| `schedule_preset` | The preset the schedule currently asks for |
+| `schedule_override_active` | A manual change is overriding the schedule |
+| `schedule_override_until` | When a timed override ends (empty when it has no timer) |
 | `is_saturated` | The correction has hit its limit and cannot push harder |
 
 While the sensor is missing, `room_temp_last_valid_c` and

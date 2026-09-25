@@ -42,8 +42,15 @@ CONF_PRESENCE_HOME_DELAY_S = "presence_home_delay_s"
 # Summer mode (input_boolean / binary_sensor) – optional global lock
 CONF_SUMMER_MODE_ENTITY_ID = "summer_mode_entity_id"
 
-# Custom preset name (not a HA built-in)
+# Schedule following (input_select / select whose state is a preset name)
+CONF_SCHEDULE_ENTITY_ID = "schedule_entity_id"
+CONF_SCHEDULE_OVERRIDE_MIN = "schedule_override_min"
+
+# Custom preset names (not HA built-ins)
 PRESET_FROST_PROTECTION = "frost_protection"
+# Pseudo-preset: selecting it resumes the schedule.  Only offered when a
+# schedule entity is configured; never shown as the active preset.
+PRESET_SCHEDULE = "schedule"
 
 # Behavioural thresholds (stored in options, override BehaviourConfig defaults)
 CONF_FOLLOW_THRESHOLD_C = "follow_threshold_c"

@@ -69,6 +69,17 @@
               "presence_home_delay_s": "Verzögerung bevor nach erkannter Präsenz zum Komfort-Modus zurückgekehrt wird."
             }
           },
+          "schedule": {
+            "name": "Zeitplan",
+            "data": {
+              "schedule_entity_id": "Zeitplan-Helfer",
+              "schedule_override_min": "Übersteuerungsdauer"
+            },
+            "data_description": {
+              "schedule_entity_id": "Optionaler Input-Select, den dein Zeitplaner setzt. Sein Zustand ist das Preset, dem dieser Raum folgt: comfort, night, away oder frost_protection. Leer lassen, um Presets manuell zu nutzen.",
+              "schedule_override_min": "Wie lange eine manuelle Änderung (Preset, Temperatur, Boost) den Zeitplan übersteuert. 0 = bis sich der Zeitplan ändert. Sonst endet die Übersteuerung nach dieser Zeit oder beim nächsten Zeitplanwechsel – je nachdem, was zuerst eintritt."
+            }
+          },
           "pi_controller": {
             "name": "PI-Regler",
             "description": "Parameter für den Proportional-Integral-Regler.",
@@ -154,10 +165,11 @@
             "state": {
               "none": "Manuell",
               "comfort": "Komfort",
-              "eco": "Eco",
+              "eco": "Nacht",
               "boost": "Boost",
               "away": "Abwesend",
-              "frost_protection": "Frostschutz"
+              "frost_protection": "Frostschutz",
+              "schedule": "Zeitplan"
             }
           }
         }
@@ -168,7 +180,7 @@
         "name": "Komfort-Temperatur"
       },
       "eco_target": {
-        "name": "Eco-Temperatur"
+        "name": "Nachttemperatur"
       },
       "boost_target": {
         "name": "Boost-Temperatur"
@@ -183,6 +195,14 @@
     "sensor": {
       "boost_remaining": {
         "name": "Boost verbleibend"
+      },
+      "schedule_override_remaining": {
+        "name": "Zeitplan-Übersteuerung verbleibend"
+      }
+    },
+    "button": {
+      "resume_schedule": {
+        "name": "Zeitplan fortsetzen"
       }
     },
     "binary_sensor": {
@@ -199,6 +219,9 @@
   "exceptions": {
     "summer_mode_locked": {
       "message": "Sommermodus ist aktiv – dieses Thermostat ist auf 5 °C gesperrt."
+    },
+    "no_schedule": {
+      "message": "Für dieses Thermostat ist kein Zeitplan-Helfer konfiguriert."
     }
   }
 }

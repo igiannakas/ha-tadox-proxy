@@ -5,6 +5,7 @@
         "sections": {
           "window_sensor": "mdi:window-open-variant",
           "presence_sensor": "mdi:motion-sensor",
+          "schedule": "mdi:calendar-clock",
           "pi_controller": "mdi:chart-bell-curve-cumulative",
           "gain_scheduling": "mdi:tune-vertical",
           "trv_communication": "mdi:radiator",
@@ -33,10 +34,11 @@
             "state": {
               "none": "mdi:hand-back-right",
               "comfort": "mdi:sofa",
-              "eco": "mdi:leaf",
+              "eco": "mdi:weather-night",
               "boost": "mdi:rocket-launch",
               "away": "mdi:home-export-outline",
-              "frost_protection": "mdi:snowflake"
+              "frost_protection": "mdi:snowflake",
+              "schedule": "mdi:calendar-sync"
             }
           }
         }
@@ -47,7 +49,7 @@
         "default": "mdi:sofa"
       },
       "eco_target": {
-        "default": "mdi:leaf"
+        "default": "mdi:weather-night"
       },
       "boost_target": {
         "default": "mdi:rocket-launch"
@@ -62,6 +64,9 @@
     "sensor": {
       "boost_remaining": {
         "default": "mdi:timer"
+      },
+      "schedule_override_remaining": {
+        "default": "mdi:timer-sand"
       }
     },
     "binary_sensor": {
@@ -72,6 +77,11 @@
     "switch": {
       "follow_tado_input": {
         "default": "mdi:gesture-tap"
+      }
+    },
+    "button": {
+      "resume_schedule": {
+        "default": "mdi:calendar-sync"
       }
     }
   }

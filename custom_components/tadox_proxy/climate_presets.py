@@ -26,6 +26,7 @@ from .const import (
     CONF_WINDOW_SENSOR_ID,
     PRESET_FROST_PROTECTION,
     PRESET_LIST,
+    PRESET_SCHEDULE,
     safe_float,
 )
 from .parameters import FROST_PROTECT_C
@@ -136,24 +137,30 @@ class PresetMixin:
             # Frost protection is restored as-is: it can only have been saved
             # when the user had selected it before the window opened.
             # A saved BOOST (selected while the window was open) is not
-            # restarted: boost is a short one-off, so return to COMFORT.
+            # restarted: boost is a short one-off, so return to the schedule
+            # preset (COMFORT without a schedule).
             if preset_to_restore == PRESET_BOOST:
-                preset_to_restore = PRESET_COMFORT
-                _LOGGER.info("Window restore: BOOST replaced by COMFORT")
+                preset_to_restore = self._fallback_preset()
+                _LOGGER.info("Window restore: BOOST replaced by %s", preset_to_restore)
             # Safety net: don't restore AWAY when presence sensor shows home
             if preset_to_restore == PRESET_AWAY:
                 presence_sensor = self._config_entry.options.get(CONF_PRESENCE_SENSOR_ID)
                 if presence_sensor:
                     ps = self.hass.states.get(presence_sensor)
                     if ps and ps.state not in ("off", "unavailable", "unknown"):
-                        preset_to_restore = PRESET_COMFORT
+                        preset_to_restore = self._fallback_preset()
                         _LOGGER.info(
-                            "Window restore: AWAY overridden to COMFORT "
-                            "(presence is home)"
+                            "Window restore: AWAY overridden to %s "
+                            "(presence is home)",
+                            preset_to_restore,
                         )
             self._preset_mode = preset_to_restore
             if preset_to_restore == PRESET_COMFORT:
                 self._target_temp = self._comfort_target()
+            elif preset_to_restore == PRESET_NONE and saved.temp is not None:
+                self._target_temp = saved.temp
+            elif preset_to_restore != saved.preset:
+                self._target_temp = self._get_preset_target(preset_to_restore)
             elif saved.temp is not None:
                 self._target_temp = saved.temp
         _LOGGER.info("Window closed: restoring previous preset")
@@ -239,8 +246,8 @@ class PresetMixin:
         # isn't stuck in AWAY→AWAY after restore (e.g. after HA restart where
         # the presence sensor was briefly unavailable at boot).
         if saved_preset == PRESET_AWAY:
-            saved_preset = PRESET_COMFORT
-            saved_temp = self._comfort_target()
+            saved_preset = self._fallback_preset()
+            saved_temp = self._get_preset_target(saved_preset)
         self._presence_ctrl.activate(saved_preset, saved_temp)
         self._preset_mode = PRESET_AWAY
         _LOGGER.info("Presence away: switching to AWAY preset")
@@ -283,10 +290,10 @@ class PresetMixin:
 
         preset_to_restore = saved.preset
         # A saved BOOST (selected while away) is not restarted: boost is a
-        # short one-off, so return to COMFORT.
+        # short one-off, so return to the schedule preset (COMFORT without one).
         if preset_to_restore == PRESET_BOOST:
-            preset_to_restore = PRESET_COMFORT
-            _LOGGER.info("Presence restore: BOOST replaced by COMFORT")
+            preset_to_restore = self._fallback_preset()
+            _LOGGER.info("Presence restore: BOOST replaced by %s", preset_to_restore)
         self._preset_mode = preset_to_restore
         # If restoring COMFORT, take the current comfort_target from options
         # (it may have been changed via number entity while away).
@@ -307,16 +314,37 @@ class PresetMixin:
     # ------------------------------------------------------------------
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Set new preset mode."""
+        """Set new preset mode (user / service call)."""
         self._summer_guard("preset change")
+        if preset_mode == PRESET_SCHEDULE:
+            await self.async_resume_schedule()
+            return
         if preset_mode not in PRESET_LIST:
             _LOGGER.warning("Unknown preset mode: %s", preset_mode)
             return
+        # A manual preset change overrides the schedule (see climate_schedule.py)
+        self._schedule_note_manual_preset(preset_mode)
+        await self._async_apply_preset(preset_mode, trigger="preset_change")
 
-        # Cancel window close delay if user manually changes preset
+    async def _async_apply_preset(self, preset_mode: str, trigger: str) -> None:
+        """Apply a preset (or save it for window/presence restore) and regulate."""
+        if self._route_preset(preset_mode):
+            self._write_state_with_binary_sensor()
+            await self._async_regulation_cycle(trigger=trigger)
+        else:
+            self._write_state_with_binary_sensor()
+
+    def _route_preset(self, preset_mode: str) -> bool:
+        """Apply *preset_mode* now, or save it while an automation is active.
+
+        Returns True when the preset was applied (the caller regulates), False
+        when it was saved for later restore by window / presence automation.
+        No state is written here.
+        """
+        # Cancel window close delay if the preset changes during it
         if self._window_ctrl.close_delay_active:
             self._window_ctrl.cancel_all()
-            _LOGGER.info("Window close delay cancelled – user changed preset to %s", preset_mode)
+            _LOGGER.info("Window close delay cancelled – preset changed to %s", preset_mode)
 
         # If presence automation is active (away due to presence sensor),
         # update the saved state so the new preset is restored when someone
@@ -327,8 +355,7 @@ class PresetMixin:
                 "Presence away: preset %s saved for restore, keeping away mode",
                 preset_mode,
             )
-            self.async_write_ha_state()
-            return
+            return False
 
         # If window automation is active (frost protection due to open window),
         # update the saved state so the new preset is restored when the window
@@ -340,9 +367,7 @@ class PresetMixin:
                 "Window open: preset %s saved for restore, keeping frost protection",
                 preset_mode,
             )
-            # Keep frost protection active – do not change preset_mode
-            self.async_write_ha_state()
-            return
+            return False
 
         old_preset = self._preset_mode
         self._preset_mode = preset_mode
@@ -375,13 +400,24 @@ class PresetMixin:
             )
 
         _LOGGER.debug("Preset changed: %s → %s", old_preset, preset_mode)
-        self.async_write_ha_state()
-        await self._async_regulation_cycle(trigger="preset_change")
+        return True
 
     async def _async_boost_expired(self, _now) -> None:
         """Called when the boost timer expires – revert to previous preset."""
         self._boost_cancel = None
         self._boost_end_ts = 0.0
+
+        # With a schedule, boost ends back on the schedule (and ends the
+        # override the boost started).
+        if self.schedule_configured and self._schedule_ctrl.schedule_preset:
+            self._schedule_ctrl.clear_override()
+            _LOGGER.info(
+                "Boost expired, returning to schedule (%s)",
+                self._schedule_ctrl.schedule_preset,
+            )
+            await self._async_follow_schedule(trigger="boost_expired")
+            return
+
         restore_preset = self._boost_saved_preset
         _LOGGER.info("Boost expired, reverting to %s", restore_preset)
 
@@ -403,7 +439,7 @@ class PresetMixin:
             self.async_write_ha_state()
             await self._async_regulation_cycle(trigger="boost_expired")
         else:
-            await self.async_set_preset_mode(restore_preset)
+            await self._async_apply_preset(restore_preset, trigger="boost_expired")
 
     # ------------------------------------------------------------------
     # Helpers

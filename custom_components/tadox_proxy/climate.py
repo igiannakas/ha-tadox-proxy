@@ -44,6 +44,7 @@ from .climate_controllers import (
     PersistedAutomationState,
     PresenceAutomationController,
     SavedState,
+    ScheduleController,
     WindowAutomationController,
     normalize_restored_preset,
     presence_startup_action,
@@ -52,6 +53,7 @@ from .climate_controllers import (
 )
 from .climate_presets import PresetMixin
 from .climate_regulation import RegulationMixin
+from .climate_schedule import ScheduleMixin
 from .climate_summer import SummerMixin
 from .const import (
     CONF_AWAY_TARGET,
@@ -75,6 +77,7 @@ from .const import (
     CONF_OVERLAY_REFRESH_S,
     CONF_PRESENCE_AWAY_DELAY_S,
     CONF_PRESENCE_SENSOR_ID,
+    CONF_SCHEDULE_ENTITY_ID,
     CONF_SENSOR_GRACE_S,
     CONF_SUMMER_MODE_ENTITY_ID,
     CONF_URGENT_DECREASE_THRESHOLD_C,
@@ -83,6 +86,7 @@ from .const import (
     DOMAIN,
     PRESET_FROST_PROTECTION,
     PRESET_LIST,
+    PRESET_SCHEDULE,
     safe_float,
 )
 from .parameters import (
@@ -126,7 +130,13 @@ async def async_setup_entry(
 
 
 class TadoXProxyClimate(
-    RegulationMixin, PresetMixin, SummerMixin, CoordinatorEntity, ClimateEntity, RestoreEntity
+    RegulationMixin,
+    PresetMixin,
+    ScheduleMixin,
+    SummerMixin,
+    CoordinatorEntity,
+    ClimateEntity,
+    RestoreEntity,
 ):
     """Proxy climate entity that controls a Tado X TRV via feedforward + PI."""
 
@@ -162,6 +172,13 @@ class TadoXProxyClimate(
         # instance-level values from _config take effect immediately.
         self.__dict__.pop("min_temp", None)
         self.__dict__.pop("max_temp", None)
+        # "Schedule" (resume) is only offered when a schedule is configured.
+        self._attr_preset_modes = (
+            [*PRESET_LIST, PRESET_SCHEDULE]
+            if config_entry.options.get(CONF_SCHEDULE_ENTITY_ID)
+            else list(PRESET_LIST)
+        )
+        self.__dict__.pop("preset_modes", None)
         self._behaviour = self._build_behaviour(config_entry)
         self._regulator = FeedforwardPiRegulator(self._config)
         self._reg_state = RegulationState()
@@ -201,6 +218,9 @@ class TadoXProxyClimate(
         # State-machine controllers (hold their own timer + saved-state)
         self._window_ctrl = WindowAutomationController()
         self._presence_ctrl = PresenceAutomationController()
+
+        # Schedule following (see climate_schedule.py)
+        self._schedule_ctrl = ScheduleController()
 
         # Summer mode: thermostat locked at 5 °C (see climate_summer.py)
         self._summer_active: bool = False
@@ -416,6 +436,15 @@ class TadoXProxyClimate(
                     self._async_summer_changed,
                 )
             )
+        schedule_entity = self._config_entry.options.get(CONF_SCHEDULE_ENTITY_ID)
+        if schedule_entity:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass,
+                    [schedule_entity],
+                    self._async_schedule_changed,
+                )
+            )
 
         # Reconcile presence first: if it restores while window mode is still
         # active, it updates the window's saved state (see
@@ -424,6 +453,8 @@ class TadoXProxyClimate(
         if not summer_on:
             self._startup_reconcile_presence(presence_sensor, persisted)
             self._startup_reconcile_window(window_sensor)
+        # Schedule last: it routes into window/presence saved state if active.
+        self._startup_schedule(persisted, summer_on)
 
         # Start periodic regulation
         self.async_on_remove(
@@ -536,6 +567,10 @@ class TadoXProxyClimate(
                 preset=self._boost_saved_preset, temp=self._boost_saved_temp
             ),
             summer_active=self._summer_active,
+            schedule_preset=self._schedule_ctrl.schedule_preset,
+            schedule_override_active=self._schedule_ctrl.override_active,
+            schedule_override_until=self._schedule_ctrl.override_until,
+            schedule_override_sticky=self._schedule_ctrl.override_sticky,
         )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -547,6 +582,7 @@ class TadoXProxyClimate(
         """
         self._window_ctrl.cancel_timers()
         self._presence_ctrl.cancel_timer()
+        self._schedule_ctrl.cancel_timer()
         if self._boost_cancel is not None:
             self._boost_cancel()
             self._boost_cancel = None
@@ -636,6 +672,7 @@ class TadoXProxyClimate(
         )
         self._target_temp = tado_setpoint
         self._preset_mode = PRESET_NONE
+        self._schedule_note_manual_temperature()
         if self._boost_cancel is not None:
             self._boost_cancel()
             self._boost_cancel = None
@@ -667,11 +704,11 @@ class TadoXProxyClimate(
             # A saved frost protection was selected by the user before the
             # window opened, so it is restored as-is.
             if restore_preset == PRESET_BOOST:
-                restore_preset = PRESET_COMFORT
+                restore_preset = self._fallback_preset()
             self._preset_mode = restore_preset
             if restore_preset == PRESET_COMFORT:
                 self._target_temp = self._comfort_target()
-            elif saved.temp is not None:
+            elif restore_preset == PRESET_NONE and saved.temp is not None:
                 self._target_temp = saved.temp
 
         previous_mode = self._hvac_mode
@@ -695,6 +732,11 @@ class TadoXProxyClimate(
             # Returning from OFF → reset timestamp so the first HEAT cycle uses
             # dt=0 and avoids an integral spike from the long OFF period.
             self._last_regulation_ts = 0
+            # With a schedule, turning back on resumes it (OFF is not an
+            # override, so any old override is dropped too).
+            if self.schedule_configured and self._schedule_ctrl.schedule_preset:
+                self._schedule_ctrl.clear_override()
+                self._route_preset(self._schedule_ctrl.schedule_preset)
             # Re-evaluate window sensor: if the window is still open after
             # OFF→HEAT, restart frost protection so we don't heat into the void.
             window_sensor = self._config_entry.options.get(CONF_WINDOW_SENSOR_ID)
@@ -735,6 +777,9 @@ class TadoXProxyClimate(
             return
         # Clamp to safe range
         temp_f = max(self._config.min_target_c, min(self._config.max_target_c, temp_f))
+
+        # A manual temperature overrides the schedule (see climate_schedule.py)
+        self._schedule_note_manual_temperature()
 
         # If window or presence automation is active, save the temperature
         # for later restoration instead of overriding the active automation.
@@ -814,7 +859,7 @@ class TadoXProxyClimate(
             return "mdi:power"
         return {
             PRESET_COMFORT: "mdi:sofa",
-            PRESET_ECO: "mdi:leaf",
+            PRESET_ECO: "mdi:weather-night",
             PRESET_BOOST: "mdi:rocket-launch",
             PRESET_AWAY: "mdi:home-export-outline",
             PRESET_FROST_PROTECTION: "mdi:snowflake",
@@ -841,6 +886,7 @@ class TadoXProxyClimate(
             "sensor_degraded": self._sensor_degraded,
             "summer_mode_active": self._summer_active,
             "overlay_refresh_s": self._overlay_refresh_s,
+            **self._schedule_attributes(),
         }
 
         # Sensor resilience diagnostics

@@ -69,6 +69,17 @@
               "presence_home_delay_s": "Delay before switching back to comfort mode after presence is detected."
             }
           },
+          "schedule": {
+            "name": "Schedule",
+            "data": {
+              "schedule_entity_id": "Schedule helper",
+              "schedule_override_min": "Override duration"
+            },
+            "data_description": {
+              "schedule_entity_id": "Optional input select set by your scheduler. Its state is the preset this room should follow: comfort, night, away or frost_protection. Leave empty to use presets manually.",
+              "schedule_override_min": "How long a manual change (preset, temperature, boost) overrides the schedule. 0 = until the schedule changes. Otherwise the override ends after this time or at the next schedule change, whichever comes first."
+            }
+          },
           "pi_controller": {
             "name": "PI Controller",
             "description": "Proportional-integral controller tuning parameters.",
@@ -154,10 +165,11 @@
             "state": {
               "none": "Manual",
               "comfort": "Comfort",
-              "eco": "Eco",
+              "eco": "Night",
               "boost": "Boost",
               "away": "Away",
-              "frost_protection": "Frost protection"
+              "frost_protection": "Frost protection",
+              "schedule": "Schedule"
             }
           }
         }
@@ -168,7 +180,7 @@
         "name": "Comfort temperature"
       },
       "eco_target": {
-        "name": "Eco temperature"
+        "name": "Night temperature"
       },
       "boost_target": {
         "name": "Boost temperature"
@@ -183,6 +195,14 @@
     "sensor": {
       "boost_remaining": {
         "name": "Boost remaining"
+      },
+      "schedule_override_remaining": {
+        "name": "Schedule override remaining"
+      }
+    },
+    "button": {
+      "resume_schedule": {
+        "name": "Resume schedule"
       }
     },
     "binary_sensor": {
@@ -199,6 +219,9 @@
   "exceptions": {
     "summer_mode_locked": {
       "message": "Summer mode is on – this thermostat is locked at 5 °C."
+    },
+    "no_schedule": {
+      "message": "No schedule helper is configured for this thermostat."
     }
   }
 }
