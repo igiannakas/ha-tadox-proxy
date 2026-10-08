@@ -15,7 +15,7 @@
  * Served and registered by the tadox_proxy integration; no resource to add.
  */
 
-const CARD_VERSION = "1.4.2";
+const CARD_VERSION = "1.4.3";
 
 const MODE_NAMES = {
   comfort: "Day",
@@ -197,7 +197,7 @@ const DIALOG_CSS = `
   button.confirm .glyph { background: rgba(255, 255, 255, 0.2); }
   button.confirm .glyph ha-icon { color: #fff; }
   button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-  button:active { transform: scale(0.98); }
+  button:active { filter: brightness(0.92); }
   @keyframes fade { from { opacity: 0; } }
   @keyframes pop { from { opacity: 0; transform: scale(0.94); } }
 `;
@@ -272,7 +272,9 @@ const CARD_CSS = `
     background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.05); -webkit-tap-highlight-color: transparent; }
   .mode ha-icon { --mdc-icon-size: 20px; color: var(--grey-color, #9e9e9e); transition: color 180ms; }
   .mode:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-  .mode:active { transform: scale(0.94); }
+  /* Press feedback without shrinking the target: a scale-down moves the edge out from under
+     the finger and taps near it were lost. */
+  .mode:active { filter: brightness(0.9); }
   .mode.busy { opacity: 0.5; pointer-events: none; }
   @container (max-width: 230px) {
     .head { padding: 10px 10px 6px; gap: 8px; }
@@ -438,7 +440,7 @@ class TadoxRoomCard extends HTMLElement {
     this._roomIcon = icon;
 
     const e = this._el;
-    e.name.textContent = name;
+    if (e.name.textContent !== name) e.name.textContent = name;
     e.icon.setAttribute("icon", icon);
     e.icon.style.color = s.color;
     e.shape.style.backgroundColor = tint(s.color, 20);
@@ -454,7 +456,7 @@ class TadoxRoomCard extends HTMLElement {
       e.temps.innerHTML = temps;
       this._lastTemps = temps;
     }
-    e.status.textContent = s.status;
+    if (e.status.textContent !== s.status) e.status.textContent = s.status;
 
     for (const btn of e.modes) {
       const def = BUTTONS.find((b) => b.preset === btn.dataset.preset);
