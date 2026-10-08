@@ -15,7 +15,7 @@
  * Served and registered by the tadox_proxy integration; no resource to add.
  */
 
-const CARD_VERSION = "1.4.1";
+const CARD_VERSION = "1.4.2";
 
 const MODE_NAMES = {
   comfort: "Day",
@@ -38,7 +38,7 @@ const BUTTONS = [
 const COLORS = {
   red: "var(--red-color, #f44336)",
   teal: "var(--teal-color, #009688)",
-  grey: "var(--disabled-color, #9e9e9e)",
+  grey: "var(--grey-color, #9e9e9e)",  // same grey as Mushroom / tile cards
   blue: "var(--blue-color, #2196f3)",
 };
 
@@ -191,8 +191,8 @@ const DIALOG_CSS = `
   button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; height: 56px;
     padding-left: 10px; border-radius: 28px; cursor: pointer; font-size: 16px; font-weight: 600;
     background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.07); color: var(--primary-text-color); }
-  button .glyph { flex-basis: 36px; height: 36px; background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.07); }
-  button .glyph ha-icon { --mdc-icon-size: 22px; color: var(--secondary-text-color); }
+  button .glyph { flex-basis: 36px; height: 36px; background: color-mix(in srgb, var(--grey-color, #9e9e9e) 20%, transparent); }
+  button .glyph ha-icon { --mdc-icon-size: 22px; color: var(--grey-color, #9e9e9e); }
   button.confirm { color: #fff; }
   button.confirm .glyph { background: rgba(255, 255, 255, 0.2); }
   button.confirm .glyph ha-icon { color: #fff; }
@@ -270,7 +270,7 @@ const CARD_CSS = `
   .mode { all: unset; box-sizing: border-box; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
     width: 34px; height: 34px; border-radius: 17px; cursor: pointer; transition: background-color 180ms;
     background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.05); -webkit-tap-highlight-color: transparent; }
-  .mode ha-icon { --mdc-icon-size: 20px; color: var(--disabled-color, #9e9e9e); transition: color 180ms; }
+  .mode ha-icon { --mdc-icon-size: 20px; color: var(--grey-color, #9e9e9e); transition: color 180ms; }
   .mode:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
   .mode:active { transform: scale(0.94); }
   .mode.busy { opacity: 0.5; pointer-events: none; }
