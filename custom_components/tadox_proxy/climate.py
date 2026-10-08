@@ -886,6 +886,10 @@ class TadoXProxyClimate(
             "sensor_degraded": self._sensor_degraded,
             "summer_mode_active": self._summer_active,
             "overlay_refresh_s": self._overlay_refresh_s,
+            # Read by the dashboard card: boost length for its confirmation
+            # text, and the Tado entity whose device holds the heating % sensor.
+            "boost_duration_min": self._config.presets.boost_duration_min,
+            "source_entity_id": self._config_entry.data.get("source_entity_id"),
             **self._schedule_attributes(),
         }
 

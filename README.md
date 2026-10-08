@@ -1,7 +1,7 @@
 # Tado X Proxy Thermostat
 
 [![Tests](https://github.com/kinimodb/ha-tadox-proxy/actions/workflows/tests.yml/badge.svg)](https://github.com/kinimodb/ha-tadox-proxy/actions/workflows/tests.yml)
-![Version](https://img.shields.io/badge/version-1.3.1-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![HA](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-41BDF5)
 
 **Read this page in your language:**
@@ -123,6 +123,8 @@ Beyond the temperature correction, you get:
   you switch it back. Optional.
 - **Schedule** — follows a schedule you make with a scheduler of your choice. You can
   still change a room by hand; it goes back to the schedule by itself. Optional.
+- **Dashboard card** — one card per room with temperatures, heating % and mode
+  buttons. Comes with the integration; see [Dashboard card](docs/dashboard-card.md).
 
 Details for all of these are in the [settings reference](docs/settings.md).
 
@@ -136,6 +138,7 @@ Start at the top and go down only as far as you need to.
 |---|---|
 | Get it running | **[Setup guide](docs/setup.md)** |
 | Look up a preset, a switch, or an option | [Settings reference](docs/settings.md) |
+| Put a room on a dashboard | [Dashboard card](docs/dashboard-card.md) |
 | Fix a room that heats too slowly or overshoots | [Tuning guide](TUNING.md) |
 | Understand how the correction actually works | [How it works](docs/how-it-works.md) |
 

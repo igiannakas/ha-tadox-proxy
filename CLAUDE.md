@@ -41,6 +41,7 @@ Neue Features immer erst in den HA-freien Modulen (`parameters.py`, `regulation.
 - `switch.py` – Toggle-Features (z.B. Follow Tado Input)
 - `config_flow.py` – Setup + Options Flow
 - `diagnostics.py` – HA-Diagnostics-Export
+- `card.py` + `www/tadox-room-card.js` – Dashboard-Karte (`custom:tadox-room-card`), per `async_setup` ausgeliefert und als Frontend-Modul registriert; liest `boost_duration_min` und `source_entity_id` aus den Climate-Attributen
 - `const.py` – DOMAIN, Config-Keys, Custom Preset Names, `safe_float()`
 - `strings.json` + `translations/` – UI-Texte (EN + DE)
 - `manifest.json` – Version, Metadata
