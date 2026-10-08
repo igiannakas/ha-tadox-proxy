@@ -396,6 +396,52 @@ class TestAwayAndAutomations:
         _preset(ent, "schedule")
         assert ent.preset_mode == "comfort"
 
+    def test_manual_off_is_sticky(self):
+        """Off picked by hand stays through schedule changes and the timer."""
+        ent = _entity("night", override_min=30)
+        _preset(ent, "frost_protection")
+        assert _override_timers() == []
+        assert ent.extra_state_attributes["schedule_override_active"] is True
+        assert ent.extra_state_attributes["schedule_override_until"] is None
+        _schedule(ent, "comfort")
+        _schedule(ent, "night")
+        assert ent.preset_mode == "frost_protection"
+
+    def test_manual_off_sticky_even_when_schedule_says_frost(self):
+        ent = _entity("frost_protection", override_min=30)
+        _preset(ent, "frost_protection")
+        _schedule(ent, "comfort")
+        assert ent.preset_mode == "frost_protection"
+
+    @pytest.mark.parametrize("next_action", ["eco", "comfort", "boost", "away", "schedule"])
+    def test_manual_off_ends_on_any_other_preset(self, next_action):
+        ent = _entity("night", override_min=30)
+        _preset(ent, "frost_protection")
+        _preset(ent, next_action)
+        expected = "eco" if next_action == "schedule" else next_action
+        assert ent.preset_mode == expected
+        _schedule(ent, "comfort")
+        if next_action in ("away",):
+            assert ent.preset_mode == "away"  # Away is sticky too
+        else:
+            assert ent.preset_mode == "comfort"
+
+    def test_manual_off_ends_on_temperature(self):
+        ent = _entity("night", override_min=30)
+        _preset(ent, "frost_protection")
+        _run(ent.async_set_temperature(temperature=19.0))
+        assert ent.preset_mode == "none"
+        assert len(_override_timers()) == 1  # a normal, timed override now
+
+    def test_window_frost_is_not_a_sticky_override(self):
+        ent = _entity("comfort")
+        ent.hass.set(WINDOW, "on")
+        ent._async_window_changed(_event("on"))
+        _fire_last_timer()
+        drain_tasks(ent)
+        assert ent.preset_mode == "frost_protection"
+        assert ent.extra_state_attributes["schedule_override_active"] is False
+
     def test_presence_away_ignores_schedule_and_returns_to_current_block(self):
         ent = _entity("comfort", window=False, presence=True)
         ent.hass.set(PRESENCE, "off")

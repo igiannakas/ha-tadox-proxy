@@ -278,7 +278,7 @@ base preset; priority is summer mode → open window → presence away → manua
 while a window or presence automation is active they only update the preset that
 automation will restore. A manual change starts an override that ends at the next
 change of the helper or after the configured duration, whichever comes first; manual
-Away is sticky. The override (and its end time) is part of the restore data, so a
+Away and manual Off (frost protection) are sticky. The override (and its end time) is part of the restore data, so a
 restart re-arms the timer, ends an override that expired while Home Assistant was
 down, and ends it if the schedule moved on in the meantime.
 

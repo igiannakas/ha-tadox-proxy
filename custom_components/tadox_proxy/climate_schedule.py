@@ -12,7 +12,8 @@ A manual change (preset, temperature, boost, physical dial when "follow
 physical thermostat" is on) starts an *override*.  It ends at the next change
 of the schedule preset, or after the configured override duration –
 whichever comes first.  Duration 0 means "until the schedule changes".
-Selecting Away by hand is sticky: it stays until the user changes it.
+Selecting Away or Off (frost protection) by hand is sticky: it stays until
+the user changes it.
 Selecting the preset the schedule currently asks for, the ``schedule``
 pseudo-preset or the "Resume schedule" button ends the override.
 """
@@ -28,7 +29,12 @@ from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
 
 from .climate_controllers import parse_schedule_preset
-from .const import CONF_SCHEDULE_ENTITY_ID, CONF_SCHEDULE_OVERRIDE_MIN, DOMAIN
+from .const import (
+    CONF_SCHEDULE_ENTITY_ID,
+    CONF_SCHEDULE_OVERRIDE_MIN,
+    DOMAIN,
+    PRESET_FROST_PROTECTION,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,7 +88,10 @@ class ScheduleMixin:
         if not self.schedule_configured:
             return
         ctrl = self._schedule_ctrl
-        if preset_mode == PRESET_AWAY:
+        # Manual Away and Off (frost protection) are sticky: they stay until
+        # the user picks something else or resumes the schedule – neither a
+        # schedule change nor the override timer ends them.
+        if preset_mode in (PRESET_AWAY, PRESET_FROST_PROTECTION):
             self._schedule_start_override(sticky=True)
         elif preset_mode == ctrl.schedule_preset:
             if ctrl.override_active:

@@ -136,7 +136,9 @@ What happens:
   schedule. The override ends at the next **change** of the schedule, or after the
   override duration, whichever comes first. With a duration of 0 it lasts until the
   schedule changes.
-- **Away** picked by hand stays until you change it; the schedule does not end it.
+- **Away** or **Off** (Frost Protection) picked by hand stays until you pick
+  something else or resume the schedule; neither the schedule nor the override
+  duration ends it. (Off caused by an open window or summer mode is not affected.)
 - **Back to the schedule:** pick **Schedule** in the preset list, press the
   **Resume schedule** button, or pick the preset the schedule is currently asking for.
 - **Boost** ends back on the schedule.
