@@ -57,9 +57,43 @@ class _Http:
         self.paths.extend(configs)
 
 
+class _Store:
+    key = "lovelace_resources"
+
+
+class _Resources:
+    """Stand-in for HA's ResourceStorageCollection."""
+
+    def __init__(self, items=None):
+        self.store = _Store()
+        self.loaded = False
+        self.items = list(items or [])
+
+    async def async_load(self):
+        pass
+
+    def async_items(self):
+        return self.items
+
+    async def async_create_item(self, data):
+        self.items.append({"id": str(len(self.items)), **data})
+
+    async def async_update_item(self, item_id, data):
+        for item in self.items:
+            if item["id"] == item_id:
+                item.update(data)
+
+
+class _Lovelace:
+    def __init__(self, resources):
+        self.resources = resources
+
+
 class _Hass:
-    def __init__(self, http=True):
+    def __init__(self, http=True, resources=None):
         self.data = {}
+        if resources is not None:
+            self.data["lovelace"] = _Lovelace(resources)
         self.http = _Http() if http else None
 
     async def async_add_executor_job(self, fn, *args):
@@ -68,7 +102,8 @@ class _Hass:
 
 def test_card_file_ships_with_the_integration():
     js = (_ROOT / "www" / "tadox-room-card.js").read_text(encoding="utf-8")
-    assert 'customElements.define("tadox-room-card"' in js
+    assert 'registry.define("tadox-room-card"' in js
+    assert 'whenDefined("home-assistant")' in js
     assert "getConfigForm" in js
 
 
@@ -85,6 +120,30 @@ def test_card_is_served_once_with_a_cache_busting_hash():
     digest = hashlib.sha256(Path(cfg.path).read_bytes()).hexdigest()[:12]
     assert calls["js"] == [f"/tadox_proxy/tadox-room-card.js?v={digest}"]
     assert re.fullmatch(r"[0-9a-f]{12}", digest)
+
+
+def _digest():
+    return hashlib.sha256((_ROOT / "www" / "tadox-room-card.js").read_bytes()).hexdigest()[:12]
+
+
+def test_card_becomes_a_dashboard_resource_when_resources_are_ui_managed():
+    card, calls = _load_card_module()
+    resources = _Resources([{"id": "a", "res_type": "module", "url": "/hacsfiles/x.js"}])
+    hass = _Hass(resources=resources)
+    asyncio.run(card.async_register_card(hass))
+    url = f"/tadox_proxy/tadox-room-card.js?v={_digest()}"
+    assert resources.items[-1] == {"id": "1", "res_type": "module", "url": url}
+    assert calls["js"] == []  # not also added as an early extra module
+
+
+def test_existing_card_resource_is_moved_to_the_new_version():
+    card, calls = _load_card_module()
+    resources = _Resources(
+        [{"id": "7", "res_type": "module", "url": "/tadox_proxy/tadox-room-card.js?v=old"}]
+    )
+    asyncio.run(card.async_register_card(_Hass(resources=resources)))
+    assert len(resources.items) == 1
+    assert resources.items[0]["url"] == f"/tadox_proxy/tadox-room-card.js?v={_digest()}"
 
 
 def test_card_registration_is_skipped_without_http():

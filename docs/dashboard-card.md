@@ -4,8 +4,11 @@ The integration ships a card for each room: `custom:tadox-room-card`. It shows
 what the room is doing and gives you one-tap mode buttons, with no templates,
 card-mod or extra resources.
 
-It is loaded automatically when the integration starts. After installing or
-updating, reload the browser tab (or restart the app) once.
+It is loaded automatically: when Home Assistant starts, the integration adds
+it to your dashboard resources (Settings → Dashboards → ⋮ → Resources, shown as
+`/tadox_proxy/tadox-room-card.js`). After installing or updating, restart Home
+Assistant and reload the browser tab or app once. If your resources are
+managed in YAML, it is loaded as a frontend module instead.
 
 ## Add it
 

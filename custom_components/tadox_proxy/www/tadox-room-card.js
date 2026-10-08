@@ -15,7 +15,7 @@
  * Served and registered by the tadox_proxy integration; no resource to add.
  */
 
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.4.1";
 
 const MODE_NAMES = {
   comfort: "Day",
@@ -136,12 +136,32 @@ function discover(hass, config) {
       if (heat) ids.heating = heat.entity_id;
     }
   }
+  if (!ids.heating) {
+    // The source may be the bare TRV (another integration) while Tado's room
+    // device holds the heating %; fall back to the one Tado heating sensor in
+    // the same area.
+    const areaId = areaIdOf(hass, config.entity);
+    const inArea = areaId
+      ? Object.values(reg).filter(
+          (e) =>
+            e.platform === "tado" &&
+            e.translation_key === "heating" &&
+            e.entity_id.startsWith("sensor.") &&
+            areaIdOf(hass, e.entity_id) === areaId,
+        )
+      : [];
+    if (inArea.length === 1) ids.heating = inArea[0].entity_id;
+  }
   return ids;
 }
 
-function areaOf(hass, entityId) {
+function areaIdOf(hass, entityId) {
   const ent = hass.entities?.[entityId];
-  const areaId = ent?.area_id || hass.devices?.[ent?.device_id]?.area_id;
+  return ent?.area_id || hass.devices?.[ent?.device_id]?.area_id;
+}
+
+function areaOf(hass, entityId) {
+  const areaId = areaIdOf(hass, entityId);
   return areaId ? hass.areas?.[areaId] : undefined;
 }
 
@@ -498,8 +518,17 @@ class TadoxRoomCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("tadox-room-card")) {
-  customElements.define("tadox-room-card", TadoxRoomCard);
+/* Home Assistant swaps in a scoped custom-element registry while its frontend
+ * boots, and this module (loaded by the integration as an extra module) can run
+ * before that. An element defined in the original registry still renders, but
+ * the dashboard asks the new registry and reports "custom element doesn't
+ * exist". So wait until the app itself is defined, then register through
+ * whichever registry is current at that point. */
+async function registerCard() {
+  await window.customElements.whenDefined("home-assistant");
+  const registry = window.customElements;
+  if (registry.get("tadox-room-card")) return;
+  registry.define("tadox-room-card", TadoxRoomCard);
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: "tadox-room-card",
@@ -510,3 +539,5 @@ if (!customElements.get("tadox-room-card")) {
   });
   console.info(`%c TADOX-ROOM-CARD %c ${CARD_VERSION} `, "background:#f44336;color:#fff", "");
 }
+
+registerCard();
