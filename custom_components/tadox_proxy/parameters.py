@@ -87,6 +87,10 @@ class AutotuneConfig:
     ki_step_up: float = 1.2
     td_step_frac: float = 0.5          # Td moves at most 50 % (or 5 min) per update
     td_step_min_s: float = 300.0
+    # Changes smaller than these are ignored (noise, not evidence).
+    kp_deadband_rel: float = 0.05
+    ki_deadband_rel: float = 0.15
+    td_deadband_s: float = 120.0
 
     # Minimum time between parameter changes, so each change can be judged
     # before the next one.  Detuning (making things gentler) waits less.
@@ -118,6 +122,7 @@ class AutotuneConfig:
     hold_window_s: float = 3 * 3600.0  # evaluated every window
     hold_buffer_s: float = 24 * 3600.0 # oscillation judged over up to this much
     hold_settle_s: float = 3600.0      # setpoint unchanged this long first
+    hold_after_heatup_s: float = 1800.0  # and this long after a heat-up ended
     hold_start_max_error_c: float = 0.5
     hold_min_heating_fraction: float = 0.2  # passive cool-downs are not holds
     hold_offset_c: float = 0.15        # mean error that counts as an offset
@@ -126,6 +131,8 @@ class AutotuneConfig:
     # Oscillation faster than this many dead times is blamed on Kp, slower
     # on Ki (an integrating loop with too much P rings at ~4 theta).
     osc_fast_period_factor: float = 6.0
+    # Slower "cycles" are weather or routine (sun, occupancy), not control.
+    osc_max_period_s: float = 12 * 3600.0
     # Emergency detune when the swing is this many times osc_amplitude_c.
     emergency_amplitude_factor: float = 2.0
 
@@ -134,9 +141,9 @@ class AutotuneConfig:
     undershoot_sag_c: float = 0.2      # peak this far below target = braked too early
 
     # Trim factors applied on top of the model-based targets.
-    kp_trim_min: float = 0.3
+    kp_trim_min: float = 0.25          # = kp_rel_min
     kp_trim_max: float = 1.5
-    ki_trim_min: float = 0.2
+    ki_trim_min: float = 0.05          # = ki_rel_min
     ki_trim_max: float = 3.0
     td_trim_min: float = 0.5
     td_trim_max: float = 2.5
@@ -150,6 +157,8 @@ class AutotuneConfig:
     # this much (overshoot, °C) or a new oscillation appears.
     rollback_margin_c: float = 0.2
     freeze_after_rollback_s: float = 3 * 86400.0
+    # A rolled-back "more heat" move is not retried for this long.
+    block_s: float = 30 * 86400.0
     pending_timeout_s: float = 7 * 86400.0
 
     # Plausibility of identified values; anything outside is discarded.

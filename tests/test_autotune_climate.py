@@ -195,3 +195,48 @@ def test_degraded_sensor_hides_room_temp_and_slope(monkeypatch):
     assert seen[-1].room_temp_c is None
     assert not seen[-1].eligible
     assert ent.extra_state_attributes["d_correction_c"] == 0.0
+
+
+def test_tuner_exception_never_stops_heating(monkeypatch):
+    """A crashing tuner is switched off; the cycle still sends its command
+    and the configured values take over."""
+    _Clock(monkeypatch)
+    ent = _make_entity(dict(AUTOTUNE_ON))
+    _run(_start(ent, extra=_Extra({"version": 1, "autotune": _learned_state()})))
+    assert ent._config.tuning.kp == pytest.approx(0.5)
+
+    def boom(_sample):
+        raise ZeroDivisionError("corrupt state")
+
+    ent._autotuner.observe = boom
+    _feed(ent, room=19.0, tado=21.0)
+    _run(ent._async_regulation_cycle("timer"))
+    assert ent.hass.service_calls, "command must still be sent"
+    assert ent._autotune_failed
+    assert ent._config.tuning.kp == 0.6                 # back to configured
+    assert ent.autotune_summary()["status"] == "disabled"
+
+
+def test_broken_summary_does_not_break_state_writes():
+    ent = _make_entity(dict(AUTOTUNE_ON))
+    _run(_start(ent))
+
+    def boom(now=None):
+        raise ValueError("bad")
+
+    ent._autotuner.summary = boom
+    attrs = ent.extra_state_attributes                  # must not raise
+    assert attrs["autotune_status"] == "disabled"
+
+
+def test_room_report_time_reaches_tuner(monkeypatch):
+    _Clock(monkeypatch)
+    ent = _make_entity(dict(AUTOTUNE_ON))
+    _run(_start(ent))
+    seen = []
+    orig = ent._autotuner.observe
+    ent._autotuner.observe = lambda s: (seen.append(s), orig(s))[1]
+    ent.coordinator.data = {"room_temp": 19.0, "room_temp_ts": 1234.5,
+                            "tado_internal_temp": 21.0, "tado_setpoint": None}
+    _run(ent._async_regulation_cycle("timer"))
+    assert seen[-1].room_temp_ts == 1234.5

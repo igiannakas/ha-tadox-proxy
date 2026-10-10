@@ -88,21 +88,32 @@ class SlopeEstimator:
     single sensor glitch (seen in practice: 1.5 °C for one report) cannot
     produce a large derivative.  Returns °C/s, or None while the window is
     too short or after a data gap.
+
+    Pass the sensor's own report time as ``value_ts`` where known: the same
+    report re-read on several regulation cycles is then counted once, so a
+    glitch stays a single point and a slow-reporting sensor does not drag
+    the slope towards zero with repeated identical values.
     """
 
-    def __init__(self, window_s: float = 720.0, max_gap_s: float = 300.0,
-                 min_samples: int = 6) -> None:
+    def __init__(self, window_s: float = 900.0, max_gap_s: float = 900.0,
+                 min_samples: int = 4) -> None:
         self.window_s = window_s
         self.max_gap_s = max_gap_s
         self.min_samples = min_samples
         self._buf: deque[tuple[float, float]] = deque()
+        self._last_value_ts: float | None = None
 
     def reset(self) -> None:
         self._buf.clear()
+        self._last_value_ts = None
 
-    def add(self, ts: float, value: float | None) -> None:
+    def add(self, ts: float, value: float | None, value_ts: float | None = None) -> None:
         if value is None or not math.isfinite(value) or not math.isfinite(ts):
             return
+        if value_ts is not None and _finite(value_ts):
+            if value_ts == self._last_value_ts:
+                return
+            self._last_value_ts = value_ts
         if self._buf and (ts - self._buf[-1][0] > self.max_gap_s or ts < self._buf[-1][0]):
             self._buf.clear()
         self._buf.append((ts, value))
@@ -140,6 +151,7 @@ class AutotuneSample:
     tado_setpoint_c: float | None      # the command the TRV currently holds
     eligible: bool = True              # False: window/summer/off/degraded...
     command_saturated: bool = False
+    room_temp_ts: float | None = None  # sensor report time (dedupes re-reads)
 
     @property
     def demand_c(self) -> float | None:
@@ -168,6 +180,7 @@ class HeatupMetrics:
     ki: float = 0.0
     td_s: float = 0.0
     truncated: bool = False            # ended early (schedule moved on)
+    crossed: bool = False              # TRV demand went <= 0 (we told it to stop)
 
     def as_dict(self) -> dict[str, Any]:
         return {k: (round(v, 6) if isinstance(v, float) else v)
@@ -186,6 +199,16 @@ class HeatupMetrics:
         for name in ("theta_s", "rate_c_per_h", "demand0_c", "coast_s", "coast_rise_c", "reach_s"):
             if getattr(m, name) is not None and not _finite(getattr(m, name)):
                 setattr(m, name, None)
+        # Values that feed divisions must be strictly positive.
+        if m.theta_s is not None and m.theta_s <= 0:
+            m.theta_s = None
+        if m.rate_c_per_h is not None and m.rate_c_per_h <= 0:
+            m.rate_c_per_h = None
+        if m.coast_s is not None and m.coast_s < 0:
+            m.coast_s = None
+        if not _finite(m.kp, m.ki, m.td_s):
+            return None
+        m.truncated, m.crossed = bool(m.truncated), bool(m.crossed)
         return m
 
 
@@ -217,6 +240,11 @@ class HoldMetrics:
             return None
         if not _finite(m.ts, m.mean_error_c, m.sd_c, m.amplitude_c, m.heating_fraction):
             return None
+        if not isinstance(m.half_cycles, int) or m.half_cycles < 0:
+            return None
+        if m.period_s is not None and (not _finite(m.period_s) or m.period_s <= 0):
+            m.period_s = None
+        m.oscillating = bool(m.oscillating)
         return m
 
 
@@ -241,26 +269,30 @@ def analyse_heatup(
     start_ts: float,
     setpoint_c: float,
     cfg: AutotuneConfig,
-    cross_index: int | None,
+    cross_ts: float | None,
     tuning: Tuning,
     truncated: bool = False,
 ) -> HeatupMetrics | None:
     """Extract dead time, heating rate, coast and overshoot from a heat-up.
 
-    ``samples`` are (ts, room_temp, demand) at the regulation cadence.
-    ``cross_index`` is the first sample at which the TRV demand fell to <= 0
-    after having been positive, or None if it never did.
+    ``samples`` are (ts, room_temp, demand), one per sensor report.
+    ``cross_ts`` is when the TRV demand first fell to <= 0 after having been
+    positive, or None if it never did.
 
     ``truncated`` means the schedule moved on before the room settled.  The
-    peak seen so far is then only a lower bound: it is kept when it already
-    shows too much overshoot (evidence for *more* braking is still valid) or
-    when the room was already falling, and dropped otherwise, so a cut-off
-    episode can never argue for *less* braking.
+    peak seen so far is then only a lower bound, so it is kept only when it
+    already shows too much overshoot (evidence for *more* braking is still
+    valid); the coast is dropped.  A cut-off episode can therefore never
+    argue for *less* braking.
     """
     if len(samples) < 10:
         return None
     ts = [s[0] for s in samples]
-    ys = _median_filter([s[1] for s in samples])
+    # 5-point running median: a glitch spanning up to two reports is removed.
+    ys = _median_filter([s[1] for s in samples], 5)
+    cross_index = None
+    if cross_ts is not None:
+        cross_index = next((i for i, t in enumerate(ts) if t >= cross_ts), None)
     y0 = _median(ys[:4])
     if y0 is None:
         return None
@@ -298,9 +330,8 @@ def analyse_heatup(
             if step >= cfg.theta_min_step_c and cfg.theta_min_s <= th <= cfg.theta_max_s:
                 theta = th
 
-    peak_established = (end_ts - ts[peak_i] >= cfg.truncated_peak_age_s) or not truncated
     overshoot: float | None = peak - setpoint_c
-    if truncated and not peak_established and overshoot <= cfg.overshoot_target_c:
+    if truncated and overshoot <= cfg.overshoot_target_c:
         overshoot = None
 
     # Coast: how much the room still rises after the TRV demand went <= 0.
@@ -311,7 +342,7 @@ def analyse_heatup(
         s_cross = theil_sen(pre) if len(pre) >= 5 else None
         y_cross = _median(ys[max(0, cross_index - 1):cross_index + 2])
         post_peak = max(ys[cross_index:])
-        if y_cross is not None and peak_established:
+        if y_cross is not None and not truncated:
             coast_rise = max(0.0, post_peak - y_cross)
             if s_cross is not None and s_cross * 3600.0 >= cfg.rate_min_c_per_h:
                 coast_s = _clamp(coast_rise / s_cross, 0.0, 3 * cfg.td_max_s)
@@ -329,6 +360,7 @@ def analyse_heatup(
         coast_s=coast_s, coast_rise_c=coast_rise,
         reach_s=(reach - start_ts) if reach is not None else None,
         kp=tuning.kp, ki=tuning.ki, td_s=tuning.td_s, truncated=truncated,
+        crossed=cross_ts is not None,
     )
 
 
@@ -386,7 +418,10 @@ def analyse_hold(
         # Any heating at all in the buffer makes a swing a control problem: a
         # sawtooth of short bursts and long passive cool-downs is still a
         # limit cycle.  Pure passive drift (no heating) is not.
-        oscillating=half_cycles >= cfg.osc_min_half_cycles and heating_all > 0.02,
+        # Cycles slower than osc_max_period_s are weather or daily routine
+        # (sun, occupancy), not the controller.
+        oscillating=(half_cycles >= cfg.osc_min_half_cycles and heating_all > 0.02
+                     and (period is None or period <= cfg.osc_max_period_s)),
         kp=tuning.kp, ki=tuning.ki, td_s=tuning.td_s,
     )
 
@@ -407,16 +442,18 @@ class _HeatupTracker:
         self.cfg = cfg
         self.samples: list[tuple[float, float, float | None]] = []
         self.demand_was_positive = False
-        self.cross_index: int | None = None
+        self.cross_ts: float | None = None
         self.peak_c = -math.inf
         self.peak_ts = start_ts
         self.abort_reason = ""
+        self._last_cycle_ts = start_ts
+        self._last_room_ts: float | None = None
 
     def _stop(self, reason: str, ts: float) -> str:
         """End early: keep the episode if the room had already been braked."""
         self.abort_reason = reason
-        if (self.cross_index is not None
-                and ts - self.samples[self.cross_index][0] >= self.cfg.truncated_min_after_cross_s):
+        if (self.cross_ts is not None
+                and ts - self.cross_ts >= self.cfg.truncated_min_after_cross_s):
             return _TRUNCATED
         return _ABORT
 
@@ -425,23 +462,27 @@ class _HeatupTracker:
             return self._stop("not_eligible", s.ts)
         if s.setpoint_c is None or abs(s.setpoint_c - self.setpoint_c) > 0.05:
             return self._stop("setpoint_changed", s.ts)
-        if self.samples and s.ts - self.samples[-1][0] > 600:
+        if s.ts - self._last_cycle_ts > 600:
             self.abort_reason = "data_gap"
             return _ABORT
-        if s.room_temp_c is None:
-            return _RUNNING
+        self._last_cycle_ts = s.ts
         d = s.demand_c
-        self.samples.append((s.ts, s.room_temp_c, d))
         if d is not None:
             if d > 0.2:
                 self.demand_was_positive = True
-            elif d <= 0 and self.demand_was_positive and self.cross_index is None:
-                self.cross_index = len(self.samples) - 1
-        recent = sorted(x[1] for x in self.samples[-3:])[len(self.samples[-3:]) // 2]
-        if recent > self.peak_c:
-            self.peak_c, self.peak_ts = recent, s.ts
+            elif d <= 0 and self.demand_was_positive and self.cross_ts is None:
+                self.cross_ts = s.ts
+        new_report = (s.room_temp_c is not None
+                      and (s.room_temp_ts is None or s.room_temp_ts != self._last_room_ts))
+        if new_report:
+            self._last_room_ts = s.room_temp_ts
+            self.samples.append((s.ts, s.room_temp_c, d))
+            tail = sorted(x[1] for x in self.samples[-5:])
+            recent = tail[len(tail) // 2]
+            if recent > self.peak_c:
+                self.peak_c, self.peak_ts = recent, s.ts
         elapsed = s.ts - self.start_ts
-        if self.cross_index is not None and s.ts - self.peak_ts >= self.cfg.heatup_settle_s:
+        if self.cross_ts is not None and s.ts - self.peak_ts >= self.cfg.heatup_settle_s:
             return _DONE
         if elapsed >= self.cfg.heatup_max_s:
             return _DONE
@@ -457,6 +498,8 @@ class _HoldTracker:
         self.cfg = cfg
         self.samples: deque[tuple[float, float, float | None]] = deque()
         self.last_eval_ts = start_ts
+        self._last_cycle_ts = start_ts
+        self._last_room_ts: float | None = None
 
     def clear(self, ts: float) -> None:
         """Start collecting fresh evidence (after a change or a verdict)."""
@@ -466,9 +509,13 @@ class _HoldTracker:
     def add(self, s: AutotuneSample) -> str:
         if not s.eligible or s.setpoint_c is None or abs(s.setpoint_c - self.setpoint_c) > 0.05:
             return _ABORT
-        if self.samples and s.ts - self.samples[-1][0] > 600:
+        if s.ts - self._last_cycle_ts > 600:
             return _ABORT
-        if s.room_temp_c is not None:
+        self._last_cycle_ts = s.ts
+        if s.room_temp_c is not None and (
+            s.room_temp_ts is None or s.room_temp_ts != self._last_room_ts
+        ):
+            self._last_room_ts = s.room_temp_ts
             self.samples.append((s.ts, self.setpoint_c - s.room_temp_c, s.demand_c))
         while self.samples and s.ts - self.samples[0][0] > self.cfg.hold_buffer_s:
             self.samples.popleft()
@@ -539,6 +586,7 @@ class Autotuner:
         self.cfg = cfg
         self.derivative_allowed = derivative_allowed
         self._baseline = baseline
+        self._now = 0.0
         self._reset_learning()
         if stored is not None:
             self._load(stored)
@@ -549,12 +597,12 @@ class Autotuner:
         self._prev_ts: float | None = None
         self._prev_eligible = True
         self._sp_since_ts: float | None = None
-        self._last_heatup_end_ts = 0.0
-        self._now = 0.0
+        self._last_heatup_end_ts = -math.inf
 
     # -- state -------------------------------------------------------------
     def _reset_learning(self) -> None:
         b = self._baseline
+        self._blocked: dict[str, list[float]] = {}   # cleared first: _bounded reads it
         self._params = self._bounded(Tuning(b.kp, b.ki, b.td_s))
         self._last_good = self._params
         self._trim = {"kp": 1.0, "ki": 1.0, "td_s": 1.0}
@@ -564,7 +612,6 @@ class Autotuner:
         self._last_change_ts = 0.0
         self._freeze_until = 0.0
         self._pending: dict[str, Any] | None = None
-        self._blocked: dict[str, list] = {}
         self._counters = {"heatups": 0, "holds": 0, "updates": 0, "rollbacks": 0}
         self.last_update_reason = ""
         self.last_event = "waiting for a heat-up"
@@ -607,13 +654,16 @@ class Autotuner:
             return PHASE_HOLD
         return PHASE_IDLE
 
-    @property
-    def status(self) -> str:
-        if self._now < self._freeze_until:
+    def status_at(self, now: float) -> str:
+        if now < self._freeze_until:
             return STATUS_FROZEN
         if self._counters["updates"] == 0 and self._model()["theta_s"] is None:
             return STATUS_LEARNING
         return STATUS_TUNING
+
+    @property
+    def status(self) -> str:
+        return self.status_at(self._now)
 
     # -- bounds ------------------------------------------------------------
     def _limits(self, name: str) -> tuple[float, float]:
@@ -621,22 +671,29 @@ class Autotuner:
         if name == "kp":
             lo = max(c.kp_min, b.kp * c.kp_rel_min)
             hi = min(c.kp_max, max(b.kp * c.kp_rel_max, c.kp_min))
+            base = b.kp
         elif name == "ki":
             if b.ki <= 0:          # the user switched the integral off: respect it
                 return 0.0, 0.0
             lo = max(c.ki_min, b.ki * c.ki_rel_min)
             hi = min(c.ki_max, max(b.ki * c.ki_rel_max, c.ki_min))
+            base = b.ki
         else:
             lo, hi = 0.0, c.td_max_s
+            base = b.td_s
         if lo > hi:
             lo = hi
-        blk = self._blocked.get(name) if hasattr(self, "_blocked") else None
-        if blk:
-            value, direction = blk
-            if direction == "down":
-                lo = min(max(lo, value), hi)
+        # Never move the user's own value by fiat: a configured value outside
+        # the hard bounds widens them, so learning starts exactly there.
+        lo, hi = min(lo, base), max(hi, base)
+        # A rolled-back "more heat" move stays blocked for a while.  Only
+        # that direction is blocked; gentler moves stay possible.
+        blk = self._blocked.get(name)
+        if blk and blk[1] > self._now:
+            if name == "td_s":
+                lo = min(max(lo, blk[0]), hi)
             else:
-                hi = max(min(hi, value), lo)
+                hi = max(min(hi, blk[0]), lo)
         return lo, hi
 
     def _bounded(self, t: Tuning) -> Tuning:
@@ -661,7 +718,7 @@ class Autotuner:
     def _simc_ki(self) -> float | None:
         """SIMC integral gain for the identified dead time (before trims)."""
         m = self._model()
-        if m["theta_s"] is None:
+        if m["theta_s"] is None or m["theta_s"] <= 0:
             return None
         return (1.0 + self._params.kp) / (4.0 * (m["tau_c_s"] + m["theta_s"]))
 
@@ -675,7 +732,7 @@ class Autotuner:
         # (down) or a stalled approach without braking (up).
         kp_t = b.kp * self._trim["kp"]
         ki_t = b.ki * self._trim["ki"]
-        if m["theta_s"] is not None and b.ki > 0:
+        if m["theta_s"] is not None and m["theta_s"] > 0 and b.ki > 0:
             span = m["tau_c_s"] + m["theta_s"]
             kc = 1.0 + kp_t
             ki_t = min(kc / (4.0 * span) * self._trim["ki"],
@@ -700,7 +757,8 @@ class Autotuner:
         sp = s.setpoint_c if _finite(s.setpoint_c) else None
         room = s.room_temp_c if _finite(s.room_temp_c) else None
         s = AutotuneSample(s.ts, sp, room, s.tado_internal_c, s.tado_setpoint_c,
-                           s.eligible and sp is not None, s.command_saturated)
+                           s.eligible and sp is not None, s.command_saturated,
+                           s.room_temp_ts if _finite(s.room_temp_ts) else None)
         resumed = (
             self._prev_ts is not None
             and (not self._prev_eligible or s.ts - self._prev_ts > 600)
@@ -714,7 +772,7 @@ class Autotuner:
                 self._last_heatup_end_ts = s.ts
                 event = self._on_heatup(analyse_heatup(
                     hu.samples, start_ts=hu.start_ts, setpoint_c=hu.setpoint_c,
-                    cfg=self.cfg, cross_index=hu.cross_index, tuning=self.active_tuning(),
+                    cfg=self.cfg, cross_ts=hu.cross_ts, tuning=self.active_tuning(),
                     truncated=st == _TRUNCATED,
                 ), s.ts)
             elif st == _ABORT:
@@ -759,7 +817,7 @@ class Autotuner:
             self._heatup is None and self._hold is None and s.eligible
             and room is not None and self._sp_since_ts is not None
             and s.ts - self._sp_since_ts >= self.cfg.hold_settle_s
-            and s.ts - self._last_heatup_end_ts >= 0
+            and s.ts - self._last_heatup_end_ts >= self.cfg.hold_after_heatup_s
             and abs(sp - room) <= self.cfg.hold_start_max_error_c
         ):
             self._hold = _HoldTracker(s.ts, sp, self.cfg)
@@ -807,24 +865,35 @@ class Autotuner:
         td_model = (_clamp(model_coast * self._trim["td_s"], 0, c.td_max_s)
                     if model_coast is not None else None)
         td_near_model = td_model is None or m.td_s >= 0.85 * td_model
-        braking = self.derivative_allowed and m.td_s > 0
+        braking = m.td_s > 0                       # a brake was active (learned or manual)
+        learns_td = self.derivative_allowed and braking
         if os > c.overshoot_target_c + 0.1:
-            if self.derivative_allowed and td_near_model and m.td_s > 0:
+            if learns_td and td_near_model:
                 self._trim_by("td_s", 1.15)
             self._votes["td_down"] = 0
             self._votes["kp_up"] = 0
         elif os < -c.undershoot_sag_c:
-            if braking:
-                self._votes["td_down"] += 1
-                if self._votes["td_down"] >= c.confirm_up:
-                    self._trim_by("td_s", 0.85)
-                    self._votes["td_down"] = 0
+            # A stall only says "stopped too early" if we actually told the
+            # TRV to stop (demand <= 0) and the episode ran its course.  A
+            # room that never got there with demand still positive is
+            # under-powered (cold weather, small radiator): more gain will
+            # not help, so it is not evidence either way.
+            if not m.crossed or m.truncated:
+                pass
+            elif braking:
+                if learns_td:
+                    self._votes["td_down"] += 1
+                    if self._votes["td_down"] >= c.confirm_up:
+                        self._trim_by("td_s", 0.85)
+                        self._votes["td_down"] = 0
+                # Manual brake with learning off: the user's Td is the cause;
+                # raising Kp would not help (the brake scales with 1 + Kp).
             else:
                 self._votes["kp_up"] += 1
                 if self._votes["kp_up"] >= c.confirm_up:
                     self._trim_by("kp", 1.1)
                     self._votes["kp_up"] = 0
-        elif os < 0.5 * c.overshoot_target_c and braking and not m.truncated:
+        elif os < 0.5 * c.overshoot_target_c and learns_td and not m.truncated:
             # Comfortably inside the target: give a little speed back.
             self._votes["td_down"] += 1
             if self._votes["td_down"] >= c.confirm_up:
@@ -900,20 +969,36 @@ class Autotuner:
         tgt = self._targets()
         kp = self._toward(cur.kp, tgt.kp, c.kp_step_down, c.kp_step_up)
         ki = self._toward(cur.ki, tgt.ki, c.ki_step_down, c.ki_step_up)
-        if emergency:
-            kp = min(kp, cur.kp * c.kp_step_down)
-            ki = min(ki, cur.ki * c.ki_step_down)
         td = cur.td_s
         if self.derivative_allowed:
             step = max(c.td_step_min_s, c.td_step_frac * cur.td_s)
             td = cur.td_s + _clamp(tgt.td_s - cur.td_s, -step, step)
+        if emergency:
+            # The caller has already cut the trims, so the targets are lower:
+            # take one step down towards them now, never up, never less
+            # braking.  Going via the trims keeps target and value in step,
+            # so a later normal update cannot creep back up.
+            kp = min(kp, cur.kp)
+            ki = min(ki, cur.ki)
+            td = max(td, cur.td_s)
+        # Per-value dead-bands: tiny moves (e.g. the SIMC Ki drifting as the
+        # dead-time median shifts by a minute) are noise.  Dropping them per
+        # value also keeps a clearly gentler change free of a sliver of
+        # "more heat" that would put it on trial.
+        if abs(kp - cur.kp) <= c.kp_deadband_rel * max(cur.kp, 1e-9):
+            kp = cur.kp
+        if abs(ki - cur.ki) <= c.ki_deadband_rel * max(cur.ki, 1e-12):
+            ki = cur.ki
+        if abs(td - cur.td_s) < c.td_deadband_s:
+            td = cur.td_s
         new = self._bounded(Tuning(kp, ki, td))
+        if emergency:
+            new = Tuning(min(new.kp, cur.kp), min(new.ki, cur.ki), max(new.td_s, cur.td_s))
 
         def rel(a: float, b: float) -> float:
             return abs(a - b) / max(abs(b), 1e-9)
 
-        changed = (rel(new.kp, cur.kp) > 0.05 or rel(new.ki, cur.ki) > 0.05
-                   or abs(new.td_s - cur.td_s) >= 60.0)
+        changed = new != cur
         if not changed:
             return None
         more_heat = (new.kp > cur.kp * 1.0001 or new.ki > cur.ki * 1.0001
@@ -922,16 +1007,24 @@ class Autotuner:
         if not emergency and self._last_change_ts and now - self._last_change_ts < interval:
             return None
 
-        prev_os = [m.overshoot_c for m in self._heatups[-2:] if m.overshoot_c is not None]
-        self._pending = {
-            "ts": now,
-            "prev": _tuning_dict(cur),
-            "prev_trim": dict(self._trim),
-            "ref_overshoot": _median(prev_os),
-            "ref_osc": any(h.oscillating for h in self._holds[-2:]),
-            "needs": c.confirm_up if more_heat else 1,
-            "overshoots": [],
-        }
+        if more_heat:
+            # Judge it against the next heat-ups; roll back if worse.
+            prev_os = [m.overshoot_c for m in self._heatups[-2:] if m.overshoot_c is not None]
+            self._pending = {
+                "ts": now,
+                "prev": _tuning_dict(cur),
+                "ref_overshoot": _median(prev_os),
+                "ref_osc": any(h.oscillating for h in self._holds[-2:]),
+                "needs": c.confirm_up,
+                "overshoots": [],
+            }
+        else:
+            # More braking, lower gains: cannot raise overshoot or start an
+            # oscillation by construction, so a sunny heat-up afterwards must
+            # not be able to roll it back.  An emergency detune supersedes
+            # any change still being judged.
+            self._pending = None
+            self._last_good = new
         self._params = new
         self._last_change_ts = now
         self._counters["updates"] += 1
@@ -946,6 +1039,25 @@ class Autotuner:
         _LOGGER.info("Auto-tune update (%s)", self.last_update_reason)
         return self.last_update_reason
 
+    def _anchor_trims(self) -> None:
+        """Set the trims so the targets equal the current values.
+
+        Used after a rollback: the evidence that pushed the failed move is
+        neutralised, so nothing re-proposes it until new evidence arrives.
+        """
+        b, cur, m = self._baseline, self._params, self._model()
+        if b.kp > 0:
+            self._trim["kp"] = cur.kp / b.kp
+        if b.ki > 0:
+            base = b.ki
+            if m["theta_s"] is not None and m["theta_s"] > 0:
+                base = (1.0 + b.kp * self._trim["kp"]) / (4.0 * (m["tau_c_s"] + m["theta_s"]))
+            self._trim["ki"] = cur.ki / base
+        if m["coast_s"]:
+            self._trim["td_s"] = cur.td_s / m["coast_s"]
+        for name in self._trim:
+            self._trim_by(name, 1.0)   # clamp into the trim bounds
+
     def _accept_pending(self) -> None:
         self._last_good = self._params
         self._pending = None
@@ -956,13 +1068,13 @@ class Autotuner:
         cur = self._params
         for name in _PARAMS:
             a, b = getattr(prev, name), getattr(cur, name)
-            if abs(a - b) > 1e-12:
-                # Never move past the old value in the direction that failed.
-                self._blocked[name] = [a, "up" if b > a else "down"]
-        if isinstance(p.get("prev_trim"), dict):
-            self._trim.update({k: float(v) for k, v in p["prev_trim"].items()
-                               if k in self._trim and _finite(v)})
+            more_heat = b < a - 1e-9 if name == "td_s" else b > a + 1e-12
+            if more_heat:
+                # Do not retry the failed "more heat" move for a while.
+                # Gentler moves on this value stay allowed.
+                self._blocked[name] = [a, now + self.cfg.block_s]
         self._params = self._bounded(prev)
+        self._anchor_trims()
         self._last_good = self._params
         self._pending = None
         self._freeze_until = now + self.cfg.freeze_after_rollback_s
@@ -973,21 +1085,26 @@ class Autotuner:
         return self.last_update_reason
 
     # -- reporting -------------------------------------------------------------------
-    def summary(self) -> dict[str, Any]:
-        """Diagnostic snapshot for attributes and sensors."""
+    def summary(self, now: float | None = None) -> dict[str, Any]:
+        """Diagnostic snapshot for attributes and sensors.
+
+        ``now`` (wall clock) keeps the frozen status right while no cycles
+        are being observed, e.g. just after a restart or while disabled.
+        """
+        now = self._now if now is None or not _finite(now) else max(now, self._now)
         m = self._model()
         last = self._heatups[-1] if self._heatups else None
         t = self.active_tuning()
         theta = m["theta_s"]
         ti = None
-        if theta is not None:
+        if theta is not None and theta > 0:
             ti = 4.0 * (m["tau_c_s"] + theta)
 
         def r(v: float | None, nd: int = 2) -> float | None:
             return round(v, nd) if v is not None else None
 
         return {
-            "status": self.status,
+            "status": self.status_at(now),
             "phase": self.phase,
             "kp": round(t.kp, 3),
             "ki": round(t.ki, 6),
@@ -1007,7 +1124,7 @@ class Autotuner:
             "updates": self._counters["updates"],
             "rollbacks": self._counters["rollbacks"],
             "awaiting_evaluation": self._pending is not None,
-            "frozen_until": self._freeze_until if self._now < self._freeze_until else None,
+            "frozen_until": self._freeze_until if now < self._freeze_until else None,
             "last_update": self.last_update_reason,
             "last_event": self.last_event,
             "trims": {k: round(v, 3) for k, v in self._trim.items()},
@@ -1045,9 +1162,9 @@ class Autotuner:
                 return
             blocked = d.get("blocked") or {}
             self._blocked = {
-                k: [float(v[0]), v[1]] for k, v in blocked.items()
+                k: [float(v[0]), float(v[1])] for k, v in blocked.items()
                 if k in _PARAMS and isinstance(v, list) and len(v) == 2
-                and _finite(v[0]) and v[1] in ("up", "down")
+                and _finite(v[0], v[1])
             }
             self._params = self._bounded(params)
             self._last_good = self._bounded(_tuning_from(d.get("last_good")) or self._params)

@@ -37,13 +37,21 @@ def _tuner(kp=0.6, ki=0.002, td=0.0, deriv=True, cfg=None, stored=None):
 
 
 def _heatup(ts, overshoot, *, theta=780.0, rate=2.0, coast=1800.0, td=0.0,
-            truncated=False, kp=0.6, ki=0.002):
+            truncated=False, kp=0.6, ki=0.002, crossed=True):
     return A.HeatupMetrics(
         ts=ts, start_ts=ts - 3 * 3600, setpoint_c=20.0, step_c=1.5,
         overshoot_c=overshoot, theta_s=theta, rate_c_per_h=rate, demand0_c=2.0,
         coast_s=coast, coast_rise_c=0.3, reach_s=3000.0, kp=kp, ki=ki, td_s=td,
-        truncated=truncated,
+        truncated=truncated, crossed=crossed,
     )
+
+
+def _force_more_heat(t, now):
+    """Make the tuner raise Kp (a judged, "more heat" change)."""
+    t._trim["kp"] = 1.4
+    reason = t._maybe_update(now, "test")
+    assert reason and t._pending is not None
+    return A._tuning_from(t._pending["prev"])
 
 
 def _hold(ts, *, mean=0.0, osc=False, amp=0.1, period=None, half=0, heating=0.5):
@@ -83,6 +91,14 @@ class TestSlopeEstimator:
             est.add(k * 60.0, 20.0)
         est.add(12 * 60.0 + 900.0, 25.0)          # 15 min gap
         assert est.slope_c_per_s() is None
+
+    def test_rereads_of_one_report_count_once(self):
+        """A slow sensor re-read every cycle must not flatten the slope."""
+        est = A.SlopeEstimator()
+        for k in range(30):                       # report every 5 min, read every 1 min
+            report = (k // 5) * 300.0
+            est.add(k * 60.0, 20.0 + report / 3600.0, value_ts=report)
+        assert est.slope_c_per_s() * 3600 == pytest.approx(1.0, rel=0.25)
 
     def test_rejects_non_finite(self):
         est = A.SlopeEstimator()
@@ -172,7 +188,7 @@ class TestAnalyseHeatup:
     def test_dead_time_and_rate(self):
         s, cross = _synthetic_heatup()
         m = A.analyse_heatup(s, start_ts=0.0, setpoint_c=20.0, cfg=CFG,
-                             cross_index=cross, tuning=A.Tuning(0.6, 0.002))
+                             cross_ts=cross * 60.0, tuning=A.Tuning(0.6, 0.002))
         assert m.theta_s / 60 == pytest.approx(12.0, abs=1.5)
         assert m.rate_c_per_h == pytest.approx(2.0, rel=0.05)
         assert m.overshoot_c == pytest.approx(0.3, abs=0.02)
@@ -181,13 +197,13 @@ class TestAnalyseHeatup:
     def test_glitch_does_not_move_dead_time(self):
         s, cross = _synthetic_heatup(glitch=True)
         m = A.analyse_heatup(s, start_ts=0.0, setpoint_c=20.0, cfg=CFG,
-                             cross_index=cross, tuning=A.Tuning(0.6, 0.002))
+                             cross_ts=cross * 60.0, tuning=A.Tuning(0.6, 0.002))
         assert m.theta_s / 60 == pytest.approx(12.0, abs=1.5)
 
     def test_small_step_gives_no_dead_time(self):
         s, cross = _synthetic_heatup(y0=19.5)
         m = A.analyse_heatup(s, start_ts=0.0, setpoint_c=20.0, cfg=CFG,
-                             cross_index=cross, tuning=A.Tuning(0.6, 0.002))
+                             cross_ts=cross * 60.0, tuning=A.Tuning(0.6, 0.002))
         assert m.theta_s is None           # 0.5 °C step: too small to trust
         assert m.overshoot_c is not None   # ...but overshoot still counts
 
@@ -196,7 +212,7 @@ class TestAnalyseHeatup:
         s, cross = _synthetic_heatup(overshoot=0.1)
         cut = [x for x in s if x[0] <= (cross + 20) * 60]
         m = A.analyse_heatup(cut, start_ts=0.0, setpoint_c=20.0, cfg=CFG,
-                             cross_index=cross, tuning=A.Tuning(0.6, 0.002),
+                             cross_ts=cross * 60.0, tuning=A.Tuning(0.6, 0.002),
                              truncated=True)
         assert m.overshoot_c is None
         assert m.coast_s is None
@@ -205,13 +221,29 @@ class TestAnalyseHeatup:
         s, cross = _synthetic_heatup(overshoot=0.8)
         cut = [x for x in s if x[0] <= (cross + 20) * 60]
         m = A.analyse_heatup(cut, start_ts=0.0, setpoint_c=20.0, cfg=CFG,
-                             cross_index=cross, tuning=A.Tuning(0.6, 0.002),
+                             cross_ts=cross * 60.0, tuning=A.Tuning(0.6, 0.002),
                              truncated=True)
         assert m.overshoot_c is not None and m.overshoot_c > CFG.overshoot_target_c
+        assert m.coast_s is None           # a lower-bound coast could lower Td
+
+    def test_two_sample_glitch_does_not_inflate_overshoot(self):
+        s, cross = _synthetic_heatup(overshoot=0.15)
+        k = cross + 30
+        s[k] = (s[k][0], s[k][1] + 1.5, s[k][2])
+        s[k + 1] = (s[k + 1][0], s[k + 1][1] + 1.5, s[k + 1][2])
+        m = A.analyse_heatup(s, start_ts=0.0, setpoint_c=20.0, cfg=CFG,
+                             cross_ts=cross * 60.0, tuning=A.Tuning(0.6, 0.002))
+        assert m.overshoot_c == pytest.approx(0.15, abs=0.05)
+
+    def test_crossed_flag(self):
+        s, cross = _synthetic_heatup()
+        m = A.analyse_heatup(s, start_ts=0.0, setpoint_c=20.0, cfg=CFG,
+                             cross_ts=None, tuning=A.Tuning(0.6, 0.002))
+        assert not m.crossed and m.coast_s is None
 
     def test_too_short(self):
         assert A.analyse_heatup([(0, 18, 1)] * 5, start_ts=0, setpoint_c=20, cfg=CFG,
-                                cross_index=None, tuning=A.Tuning(0.6, 0.002)) is None
+                                cross_ts=None, tuning=A.Tuning(0.6, 0.002)) is None
 
 
 class TestAnalyseHold:
@@ -241,6 +273,12 @@ class TestAnalyseHold:
         m = A.analyse_hold(s, cfg=CFG, tuning=A.Tuning(0.6, 0.002))
         assert m.oscillating
 
+    def test_very_slow_cycle_is_not_oscillation(self):
+        """A daily-ish swing (sun, routine) is not the controller."""
+        s = self._samples(lambda t: 0.4 * math.sin(2 * math.pi * t / (14 * 3600)), hours=24)
+        m = A.analyse_hold(s, cfg=CFG, tuning=A.Tuning(0.6, 0.002))
+        assert not m.oscillating
+
     def test_offset(self):
         s = self._samples(lambda t: 0.25, noise=0.02)
         m = A.analyse_hold(s, cfg=CFG, tuning=A.Tuning(0.6, 0.002))
@@ -252,14 +290,32 @@ class TestAnalyseHold:
 # 2. Safety contract
 # ---------------------------------------------------------------------------
 
-def _within_bounds(t: A.Autotuner) -> None:
-    a, b, c = t.active_tuning(), t.baseline, t.cfg
-    assert max(c.kp_min, b.kp * c.kp_rel_min) - 1e-12 <= a.kp <= min(c.kp_max, b.kp * c.kp_rel_max) + 1e-12
-    if b.ki > 0:
-        assert max(c.ki_min, b.ki * c.ki_rel_min) - 1e-15 <= a.ki <= min(c.ki_max, b.ki * c.ki_rel_max) + 1e-15
+def _expected_limits(t: A.Autotuner, name: str) -> tuple[float, float]:
+    """Documented bounds, computed independently of the tuner's own code:
+    hard bounds intersected with the bounds relative to the configured value,
+    widened to include the configured value itself."""
+    c, b = t.cfg, t.baseline
+    if name == "kp":
+        lo, hi, base = max(c.kp_min, b.kp * c.kp_rel_min), min(c.kp_max, max(b.kp * c.kp_rel_max, c.kp_min)), b.kp
+    elif name == "ki":
+        if b.ki <= 0:
+            return 0.0, 0.0
+        lo, hi, base = max(c.ki_min, b.ki * c.ki_rel_min), min(c.ki_max, max(b.ki * c.ki_rel_max, c.ki_min)), b.ki
     else:
-        assert a.ki == 0.0
-    assert 0.0 <= a.td_s <= c.td_max_s
+        lo, hi, base = 0.0, c.td_max_s, b.td_s
+    lo = min(lo, hi)
+    return min(lo, base), max(hi, base)
+
+
+def _within_bounds(t: A.Autotuner) -> None:
+    a = t.active_tuning()
+    for name in ("kp", "ki"):
+        lo, hi = _expected_limits(t, name)
+        assert lo - 1e-12 <= getattr(a, name) <= hi + 1e-12, (name, getattr(a, name), lo, hi)
+    if t.derivative_allowed:
+        lo, hi = _expected_limits(t, "td_s")
+        assert lo - 1e-9 <= a.td_s <= hi + 1e-9
+    assert a.td_s <= max(t.cfg.td_max_s, t.baseline.td_s)
 
 
 class TestSafety:
@@ -268,37 +324,43 @@ class TestSafety:
         assert t.active_tuning() == A.Tuning(0.6, 0.002, 0.0)
         assert t.status == A.STATUS_LEARNING
 
-    @pytest.mark.parametrize("seed", range(25))
+    @pytest.mark.parametrize("seed", range(30))
     def test_fuzz_never_leaves_bounds_or_step_limits(self, seed):
-        """Random (including absurd) evidence for weeks: bounds always hold."""
+        """Random (including absurd) evidence for weeks: bounds always hold,
+        and every change except a rollback respects the per-step limits."""
         rng = random.Random(seed)
-        t = _tuner(kp=rng.choice([0.3, 0.6, 1.5]), ki=rng.choice([0.0, 0.001, 0.004]))
+        t = _tuner(kp=rng.choice([0.0, 0.3, 0.6, 1.5, 4.0]),
+                   ki=rng.choice([0.0, 0.001, 0.004, 0.02]),
+                   td=rng.choice([0.0, 600.0]), deriv=rng.random() < 0.8)
+        c = t.cfg
         now = 0.0
         for _ in range(300):
             now += rng.uniform(600, 12 * 3600)
+            t._now = now
             before = t.active_tuning()
             if rng.random() < 0.6:
                 m = _heatup(now, rng.uniform(-1.5, 3.0), theta=rng.uniform(100, 5000),
                             rate=rng.uniform(0.01, 20), coast=rng.choice([None, rng.uniform(0, 20000)]),
-                            td=before.td_s, truncated=rng.random() < 0.2)
+                            td=before.td_s, truncated=rng.random() < 0.2,
+                            crossed=rng.random() < 0.8)
                 if rng.random() < 0.1:
                     m.overshoot_c = None
-                t._now = now
-                t._on_heatup(m, now)
+                reason = t._on_heatup(m, now)
             else:
-                t._now = now
-                t._on_hold(_hold(now, mean=rng.uniform(-1, 1), osc=rng.random() < 0.3,
-                                 amp=rng.uniform(0, 1.5), period=rng.uniform(600, 40000),
-                                 half=rng.randint(0, 8), heating=rng.random()), now)
+                reason = t._on_hold(_hold(now, mean=rng.uniform(-1, 1), osc=rng.random() < 0.3,
+                                          amp=rng.uniform(0, 1.5), period=rng.uniform(600, 40000),
+                                          half=rng.randint(0, 8), heating=rng.random()), now)
             after = t.active_tuning()
             _within_bounds(t)
-            c = t.cfg
+            if reason and reason.startswith("rolled back"):
+                continue
             if after.kp != before.kp:
-                assert before.kp * c.kp_step_down * c.kp_step_down - 1e-12 <= after.kp \
-                    <= before.kp * c.kp_step_up + 1e-12 or after == t._last_good
-            if after.td_s != before.td_s and abs(after.td_s - before.td_s) > 1e-9:
+                assert before.kp * c.kp_step_down - 1e-12 <= after.kp <= before.kp * c.kp_step_up + 1e-12
+            if after.ki != before.ki:
+                assert before.ki * c.ki_step_down - 1e-15 <= after.ki <= before.ki * c.ki_step_up + 1e-15
+            if abs(after.td_s - before.td_s) > 1e-9:
                 step = max(c.td_step_min_s, c.td_step_frac * before.td_s)
-                assert abs(after.td_s - before.td_s) <= step + 1e-6 or after == t._last_good
+                assert abs(after.td_s - before.td_s) <= step + 1e-6
 
     def test_more_heat_needs_confirmation(self):
         """A single sag must not raise Kp (no braking active)."""
@@ -333,29 +395,117 @@ class TestSafety:
         assert a.kp == 0.6
 
     def test_rollback_on_worse_overshoot(self):
-        t = _tuner()
-        t._on_heatup(_heatup(DAY, 0.3), DAY)                       # change #1
-        changed = t.active_tuning()
-        assert t._pending is not None
-        prev = A._tuning_from(t._pending["prev"])
-        # next episode much worse -> roll back and freeze
-        reason = t._on_heatup(_heatup(2 * DAY, 0.9, td=changed.td_s), 2 * DAY)
+        t = _tuner(deriv=False)
+        t._on_heatup(_heatup(DAY, 0.2), DAY)
+        prev = _force_more_heat(t, 2 * DAY)          # Kp up, being judged
+        assert t.active_tuning().kp > prev.kp
+        t._on_heatup(_heatup(3 * DAY, 0.9), 3 * DAY)  # needs two episodes
+        reason = t._on_heatup(_heatup(4 * DAY, 0.9), 4 * DAY)
         assert reason.startswith("rolled back")
         assert t.active_tuning() == prev
-        t._now = 2 * DAY + 1
+        t._now = 4 * DAY + 1
         assert t.status == A.STATUS_FROZEN
-        # frozen: nothing changes even with fresh evidence
-        assert t._on_heatup(_heatup(2.5 * DAY, 0.9, td=prev.td_s), 2.5 * DAY) is None
-        # and the failed direction is blocked for good
-        assert t._blocked
+        assert t._on_heatup(_heatup(4.5 * DAY, 0.9), 4.5 * DAY) is None   # frozen
+        # only the failed "more heat" direction is blocked, for a limited time
+        assert set(t._blocked) == {"kp"}
+        assert t._limits("kp")[1] == pytest.approx(prev.kp)
 
     def test_rollback_on_new_oscillation(self):
-        t = _tuner()
-        t._on_heatup(_heatup(DAY, 0.3), DAY)
-        prev = A._tuning_from(t._pending["prev"])
-        reason = t._on_hold(_hold(DAY + 6 * 3600, osc=True, amp=0.2, period=3600, half=4), DAY + 6 * 3600)
+        t = _tuner(deriv=False)
+        prev = _force_more_heat(t, DAY)
+        reason = t._on_hold(_hold(DAY + 6 * 3600, osc=True, amp=0.2, period=3600, half=4),
+                            DAY + 6 * 3600)
         assert reason.startswith("rolled back")
         assert t.active_tuning() == prev
+
+    def test_gentle_change_is_never_rolled_back(self):
+        """More braking / lower Ki cannot cause a sunny heat-up's overshoot."""
+        t = _tuner()
+        t._on_heatup(_heatup(DAY, 0.3), DAY)          # Td up, Ki down
+        changed = t.active_tuning()
+        assert changed.td_s > 0 and t._pending is None
+        reason = t._on_heatup(_heatup(2 * DAY, 1.2, td=changed.td_s), 2 * DAY)
+        assert not (reason or "").startswith("rolled back")
+        assert t.active_tuning().td_s >= changed.td_s
+        assert t._blocked == {}
+
+    def test_emergency_still_works_after_rollback(self):
+        t = _tuner(kp=1.0, ki=0.003, deriv=False)
+        _force_more_heat(t, DAY)
+        t._on_hold(_hold(DAY + 6 * 3600, osc=True, amp=0.2, period=3600, half=4), DAY + 6 * 3600)
+        assert t.summary()["rollbacks"] == 1
+        before = t.active_tuning()
+        now = DAY + 7 * 3600
+        t._now = now
+        reason = t._on_hold(_hold(now, osc=True, amp=0.6, period=3600, half=5), now)
+        assert reason is not None
+        a = t.active_tuning()
+        assert a.kp < before.kp and a.ki < before.ki
+
+    def test_block_expires(self):
+        t = _tuner(deriv=False)
+        prev = _force_more_heat(t, DAY)
+        t._rollback(DAY + 3600, "test")
+        t._now = DAY + 3600 + 1
+        assert t._limits("kp")[1] == pytest.approx(prev.kp)
+        t._now = DAY + 3600 + t.cfg.block_s + 1
+        assert t._limits("kp")[1] > prev.kp
+
+    def test_reset_and_baseline_change_clear_blocks(self):
+        t = _tuner(deriv=False)
+        _force_more_heat(t, DAY)
+        t._rollback(DAY + 3600, "test")
+        assert t._blocked
+        t.reset()
+        assert t._blocked == {}
+        assert t.active_tuning() == A.Tuning(0.6, 0.002, 0.0)
+        _force_more_heat(t, 3 * DAY)
+        t._rollback(3 * DAY + 3600, "test")
+        t.set_baseline(A.Tuning(0.4, 0.001, 0.0), False)
+        assert t._blocked == {}
+        assert t.active_tuning() == A.Tuning(0.4, 0.001, 0.0)
+
+    def test_emergency_never_reduces_braking(self):
+        t = _tuner(td=1800.0)
+        t._trim["td_s"] = 0.5                         # target well below current Td
+        t._heatups = [_heatup(DAY, 0.1, coast=1800)]
+        t._now = DAY
+        reason = t._on_hold(_hold(DAY, osc=True, amp=0.6, period=3600, half=5), DAY)
+        assert reason is not None
+        assert t.active_tuning().td_s >= 1800.0
+
+    def test_cut_short_stall_does_not_relax_braking(self):
+        t = _tuner(td=1200.0)
+        for k in range(1, 5):
+            t._on_heatup(_heatup(k * DAY, -0.3, td=1200.0, truncated=True), k * DAY)
+        assert t._trim["td_s"] == 1.0
+
+    def test_manual_brake_stall_does_not_raise_kp(self):
+        t = _tuner(td=1200.0, deriv=False)
+        for k in range(1, 6):
+            t._on_heatup(_heatup(k * DAY, -0.4, td=1200.0), k * DAY)
+        assert t._trim["kp"] == 1.0
+        assert t.active_tuning().kp == 0.6
+
+    def test_underpowered_room_does_not_raise_kp(self):
+        """Never reached the target with demand still positive (cold day)."""
+        t = _tuner(deriv=False)
+        for k in range(1, 6):
+            t._on_heatup(_heatup(k * DAY, -0.8, coast=None, crossed=False), k * DAY)
+        assert t._trim["kp"] == 1.0
+
+    @pytest.mark.parametrize("kp,ki", [(0.0, 0.002), (5.0, 0.002), (0.6, 0.02), (0.6, 0.0)])
+    def test_out_of_range_baseline_starts_exactly_there(self, kp, ki):
+        t = _tuner(kp=kp, ki=ki)
+        assert t.active_tuning() == A.Tuning(kp, ki, 0.0)
+
+    def test_frozen_status_follows_wall_clock(self):
+        t = _tuner(deriv=False)
+        _force_more_heat(t, DAY)
+        t._rollback(DAY + 3600, "test")
+        restored = _tuner(deriv=False, stored=t.as_dict())   # e.g. after a restart
+        assert restored.summary(now=DAY + 7200)["status"] == A.STATUS_FROZEN
+        assert restored.summary(now=DAY + 10 * DAY)["status"] != A.STATUS_FROZEN
 
     def test_emergency_detune_bypasses_rate_limit(self):
         t = _tuner(kp=1.5, ki=0.004)
@@ -421,6 +571,7 @@ class TestPersistence:
         t = _tuner()
         t._on_heatup(_heatup(DAY, 0.6), DAY)
         t._on_hold(_hold(DAY + 4 * 3600, mean=0.05), DAY + 4 * 3600)
+        _force_more_heat(t, 2 * DAY)
         d = t.as_dict()
         t2 = _tuner(stored=d)
         assert t2.active_tuning() == t.active_tuning()
@@ -442,6 +593,15 @@ class TestPersistence:
     def test_garbage_gives_baseline(self, bad):
         t = _tuner(stored=bad)
         assert t.active_tuning() == A.Tuning(0.6, 0.002, 0.0)
+
+    def test_zero_dead_time_in_storage_is_ignored(self):
+        t = _tuner()
+        t._on_heatup(_heatup(DAY, 0.6), DAY)
+        d = t.as_dict()
+        d["heatups"][0]["theta_s"] = 0.0
+        t2 = _tuner(stored=d)
+        t2.summary()
+        t2._targets()
 
     def test_out_of_bounds_stored_values_are_clamped(self):
         d = _tuner().as_dict()
@@ -518,3 +678,30 @@ class TestClosedLoop:
         a = tuner.active_tuning()
         assert a.kp == 0.6
         assert a.td_s == 0.0
+
+
+def test_production_settings_with_sunny_days_stay_sane():
+    """180 s / 0.3 °C sends, random sunny afternoons: no runaway, no locked
+    brake, overshoot on ordinary days ends near target."""
+    rng = random.Random(8)
+    sunny = [rng.random() < 0.4 for _ in range(22)]
+
+    def sun(t):
+        d, h = int(t // DAY), (t / 3600) % 24
+        return 0.4 if sunny[d] and 13 <= h < 18.5 else 0.0
+
+    c = P.RegulationConfig()
+    c.tuning = P.CorrectionTuning(kp=0.6, ki=0.002)
+    c.gain_fine_threshold_c = 1.0
+    tuner = _tuner()
+    sim = RoomSim(PlantParams(**LIVING, extra_gain=sun), R, c,
+                  ProxySettings(min_command_interval_s=180, min_change_threshold_c=0.3),
+                  y0=19.0, tuner=tuner, autotune_module=A, seed=8)
+    tr = sim.run(21 * 24, SCHED)
+    _within_bounds(tuner)
+    s = tuner.summary()
+    assert s["rollbacks"] <= 1
+    assert tuner.active_tuning().td_s >= 600            # braking learned, not locked off
+    quiet = [d for d in range(14, 21) if not sunny[d]]
+    assert quiet
+    assert max(_evening_overshoot(tr, d) for d in quiet) < 0.3

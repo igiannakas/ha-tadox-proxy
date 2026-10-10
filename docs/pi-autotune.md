@@ -166,9 +166,21 @@ slope at that moment. It measures the plant, not the controller, so it is
 valid whether or not the brake was active.
 
 **Cut-short heat-ups.** Morning comfort periods often end before the room
-settles. A truncated episode keeps its overshoot only if it already shows
-*too much* overshoot, or if the peak is at least 15 min old. A cut-off
-episode can therefore never argue for *less* braking.
+settles. A truncated episode keeps its dead time and heating rate. It keeps
+its overshoot only if that already shows *too much* overshoot, and it never
+contributes a coast time or a "stalled" verdict. A cut-off episode can
+therefore never argue for *less* braking.
+
+**Stalls only count when we stopped too early.** A heat-up that ends below
+target counts as "stalled" only if the TRV demand actually went ≤ 0. If
+demand was still positive the room is under-powered: a cold day or a small
+radiator. More gain would not help, so the episode is not evidence. A stall
+with a *manual* braking time (learning off) never raises Kp either.
+
+**Each sensor report counts once.** The coordinator re-reads the room sensor
+every cycle. The slope and the episode analysis use the sensor's own report
+time, so a slow sensor or a glitch is not counted several times. On top of
+that, a 5-point running median removes glitches spanning up to two reports.
 
 ### How values move
 
@@ -180,7 +192,11 @@ episode can therefore never argue for *less* braking.
 
 A room that stays too *warm* never raises Ki: that is coast, Td's job.
 Neither does a partial swing. Both are classic ways a tuner talks itself into
-more integral.
+more integral. Swings slower than 12 h are treated as weather or routine, not
+control.
+
+Moves smaller than 5 % (Kp), 15 % (Ki) or 2 min (Td) are ignored as noise.
+This also stops a sliver of "more heat" riding along with a gentler change.
 
 Simulated result after two weeks, using the living-room and study models
 calibrated to the data above. Each row compares the same day with the
@@ -189,12 +205,12 @@ tuner off ("fixed") and on:
 | Room | | Overshoot (morning / evening) | Within 0.5 °C | Within 0.1 °C | Hold std. dev. |
 |---|---|---|---|---|---|
 | Living room | fixed | 0.75 / 0.43 °C | 34 min | 45 min | 0.16 °C |
-| | tuned | **0.15 / 0.19 °C** | 31 min | 67 min | 0.13 °C |
+| | tuned | **0.15 / 0.18 °C** | 32 min | 62 min | 0.12 °C |
 | Study | fixed | 1.08 / 0.57 °C | 38 min | 51 min | 0.16 °C |
-| | tuned | **0.15 / 0.18 °C** | 37 min | 61 min | 0.12 °C |
+| | tuned | **0.18 / 0.19 °C** | 36 min | 57 min | 0.13 °C |
 
-Learned values: Td 27 min / Ki 0.00021 (living room) and Td 32 min /
-Ki 0.00016 (study). Kp stayed at 0.6 in both. Braking costs time only on the
+Learned values: Td 24 min / Ki 0.00018 (living room) and Td 29 min /
+Ki 0.00015 (study). Kp stayed at 0.6 in both. Braking costs time only on the
 *last* few tenths of a degree. The time to get within half a degree is
 unchanged.
 
@@ -206,49 +222,70 @@ starting point (Kp 2.0, Ki 0.005); and derivative learning switched off.
 None left its bounds or needed a rollback. With derivative learning on,
 overshoot ended at ≤ 0.2 °C in every variant except those in §7. With it off,
 only Ki is tuned and overshoot fell less (1.04 → 0.71 °C). A deliberately
-oscillating room (±0.65 °C, 9 h cycle) was calmed to about ±0.15 °C within a
-week.
+oscillating room (±0.65 °C, 9 h cycle) was calmed to about ±0.13 °C within
+five days.
+
+With production send settings (180 s / 0.3 °C) and random sunny afternoons
+(+0.4 °C/h on 40 % of days), 0 of 12 two-week runs rolled anything back.
+At +1 °C/h, 1 of 12 did. It blocked only a 10 % Ki increase, and braking
+carried on.
 
 ---
 
 ## 6. What stops it running away
 
-Each item is covered by a test in `tests/test_autotune.py`.
+Each item is covered by a test in `tests/test_autotune.py` or
+`tests/test_autotune_climate.py`.
 
 1. **Hard bounds.** Kp 0.1–2.0, Ki 0.00005–0.005, Td 0–45 min, whatever the
    measurements say.
 2. **Bounds around your values.** Kp stays within 0.25–2× of your Kp, and
-   Ki within 0.05–2× of your Ki. If you set Ki = 0, it stays 0.
+   Ki within 0.05–2× of your Ki. If you set Ki = 0, it stays 0. Your own value
+   is always allowed, even outside the hard bounds, so switching auto-tune on
+   never moves anything by itself.
 3. **Small steps.** Per update: Kp ×0.85 / ×1.10, Ki ×0.7 / ×1.2, Td ±50 %
-   or 5 min.
+   or 5 min. Smaller moves than the dead-bands in §5 are ignored.
 4. **Rate limits.** At least 3 h between gentler changes, and 12 h between
    "more heat" changes (higher Kp/Ki, less braking).
 5. **Confirmation for "more heat".** Two agreeing episodes are needed. One is
-   enough for a gentler move. When unsure, it errs towards less heat, within
-   the bounds above.
-6. **Watchdog.** After every change, the next heat-up(s) are compared with
-   the ones before. Overshoot up by > 0.2 °C, or a new oscillation, triggers
-   a rollback. The old values are restored, the tuner freezes for 3 days,
-   and that direction is blocked permanently for that value.
+   enough for a gentler move.
+6. **Watchdog on "more heat" changes.** After such a change, the next two
+   heat-ups are compared with the two before it. If overshoot rose by
+   > 0.2 °C, or a new oscillation appears, the change is rolled back:
+   - the old values are restored and the tuner pauses for 3 days;
+   - that one move is not retried for 30 days. Gentler moves on the same
+     value stay possible;
+   - the trims are re-anchored to the restored values, so the old evidence
+     cannot push the same move again.
+
+   Gentler changes are *not* put on trial. More braking or lower gain cannot
+   raise overshoot or start an oscillation, so a sunny afternoon right after
+   one must not be able to undo it.
 7. **Emergency detune.** A swing of ±0.3 °C or more cuts Kp and Ki at once,
-   bypassing the rate limit.
-8. **Robust measurements.** Median filters, Theil–Sen slopes,
-   plausibility windows (θ 3–60 min, rate 0.2–10 °C/h), and minimum step
-   sizes. Glitches are discarded rather than learned from.
+   bypassing the rate limit, and never reduces braking.
+8. **Robust measurements.** Each sensor report counts once, with median
+   filters, Theil–Sen slopes, plausibility windows (θ 3–60 min,
+   rate 0.2–10 °C/h) and minimum step sizes. Glitches are discarded rather
+   than learned from.
 9. **The brake cannot add heat.** It is one-sided and clamped by
    construction (`regulation.py`).
 10. **Existing guards unchanged.** The integral deadband, decay, ±2 °C
     clamp, saturation freeze and the 5–25 °C command clamp.
 11. **Isolation.** Learned values live in the restore-state data and are
     never written to the config entry (which would reload the integration).
-    Changing Kp, Ki or the braking time in the options restarts learning
-    from the new values. Switching auto-tune off reverts to the configured
-    values immediately. *Reset auto-tune* does the same and starts over.
-12. **Malformed stored state** (corrupt, wrong version, values out of
-    bounds) falls back to the configured values.
+    Changing Kp, Ki or the braking time in the options restarts learning from
+    the new values. Switching auto-tune off reverts to the configured values
+    immediately. *Reset auto-tune* does the same and starts over. Both clear
+    any blocked moves.
+12. **The tuner can never stop heating control.** Any exception inside it
+    switches it off until restart. The configured values take over, and the
+    command for that cycle has already been sent.
+13. **Malformed stored state** (corrupt, wrong version, zero or negative
+    times, out-of-bounds values) is discarded or clamped.
 
-Fuzz test: 25 seeds × 300 random, including absurd, episodes. Bounds and
-step limits hold on every step.
+Fuzz test: 30 seeds × 300 random, including absurd, episodes, from starting
+values inside and outside the bounds. Bounds and per-step limits hold on
+every step except an explicit rollback.
 
 ---
 

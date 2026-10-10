@@ -48,25 +48,40 @@ class RegulationMixin:
         )
 
     def _feed_autotune(self, now, setpoint, room_temp, tado_internal, result) -> None:
-        """Hand one cycle to the auto-tuner; apply any change it makes."""
-        if not self._autotune_enabled:
+        """Hand one cycle to the auto-tuner; apply any change it makes.
+
+        The tuner must never be able to stop heating control: any exception
+        switches it off for this session and the configured values are used.
+        """
+        if not self._autotune_enabled or self._autotune_failed:
             return
         tado_sp = (
             self._last_sent_setpoint
             if self._last_sent_setpoint is not None
             else self.coordinator.data.get("tado_setpoint")
         )
-        reason = self._autotuner.observe(
-            AutotuneSample(
-                ts=now,
-                setpoint_c=setpoint,
-                room_temp_c=None if self._sensor_degraded else room_temp,
-                tado_internal_c=tado_internal,
-                tado_setpoint_c=tado_sp,
-                eligible=self._autotune_eligible(),
-                command_saturated=result.is_saturated,
+        try:
+            reason = self._autotuner.observe(
+                AutotuneSample(
+                    ts=now,
+                    setpoint_c=setpoint,
+                    room_temp_c=None if self._sensor_degraded else room_temp,
+                    tado_internal_c=tado_internal,
+                    tado_setpoint_c=tado_sp,
+                    eligible=self._autotune_eligible(),
+                    command_saturated=result.is_saturated,
+                    room_temp_ts=self.coordinator.data.get("room_temp_ts"),
+                )
             )
-        )
+        except Exception:  # noqa: BLE001 - isolate the tuner from the control loop
+            _LOGGER.exception(
+                "%s: auto-tune failed and is paused until restart; using the "
+                "configured Kp/Ki/braking time",
+                self._config_entry.title,
+            )
+            self._autotune_failed = True
+            self._apply_active_tuning()
+            return
         if reason:
             _LOGGER.info("%s: auto-tune %s", self._config_entry.title, reason)
             self._apply_active_tuning()
@@ -152,7 +167,7 @@ class RegulationMixin:
         # readings; a bridged/stale value must not look like a flat room).
         slope = None
         if not self._sensor_degraded:
-            self._slope.add(now, room_temp)
+            self._slope.add(now, room_temp, self.coordinator.data.get("room_temp_ts"))
             slope = self._slope.slope_c_per_s()
 
         # 4. Compute regulation

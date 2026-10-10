@@ -218,6 +218,8 @@ class TadoXProxyClimate(
             ),
         )
         self._slope = SlopeEstimator()
+        # Set if the tuner ever raises: it is then ignored until restart.
+        self._autotune_failed = False
         self._apply_active_tuning()
 
         # UI state
@@ -333,7 +335,7 @@ class TadoXProxyClimate(
 
     def _apply_active_tuning(self) -> None:
         """Point the regulator at the learned (or configured) values."""
-        if self._autotune_enabled:
+        if self._autotune_enabled and not self._autotune_failed:
             active = self._autotuner.active_tuning()
         else:
             active = self._configured_tuning()
@@ -360,8 +362,13 @@ class TadoXProxyClimate(
 
     def autotune_summary(self) -> dict[str, Any]:
         """Diagnostic snapshot of the auto-tuner (status 'disabled' when off)."""
-        summary = self._autotuner.summary()
-        if not self._autotune_enabled:
+        try:
+            summary = self._autotuner.summary(now=time.time())
+        except Exception:  # noqa: BLE001 - diagnostics must never break state writes
+            _LOGGER.exception("%s: auto-tune summary failed", self._config_entry.title)
+            self._autotune_failed = True
+            return {"status": STATUS_DISABLED, "error": "auto-tune failed, see log"}
+        if not self._autotune_enabled or self._autotune_failed:
             summary["status"] = STATUS_DISABLED
         return summary
 
