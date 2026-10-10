@@ -256,7 +256,7 @@ the tuner made these choices:
 
 | Room | Episodes | Learned so far | Would set |
 |---|---|---|---|
-| Living room | 4 (all cut short at 08:00) | dead time 17 min, coast ≥ 13 min | Td 0 → 10 min, Ki 0.003 → 0.0015 |
+| Living room | 4 (all cut short at 08:00) | dead time 17 min, coast ≥ 13 min | Td 0 → 10 min, Ki 0.003 → 0.0015 (Ki in force at the start of that week) |
 | Study | 1 | coast ≥ 52 min | Td 0 → 5 min |
 | Second bedroom | 3 | coast ≥ 42 min | Td 0 → 15 min |
 | Master bedroom | 1 | rate 1.5 °C/h | nothing yet |
