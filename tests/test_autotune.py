@@ -729,11 +729,11 @@ LIVING = dict(trv_offset_c=-9.9, tau_room_h=50, t_out_c=12, trv_beta_c=6, tado_k
 SCHED = schedule_from([(0, 18.0), (6, 20.0), (8, 5.0), (17, 20.0), (22.5, 18.0)])
 
 
-def _closed_loop(plant_kw, kp, ki, days, sched=SCHED, td=0.0, deriv=True, cfg=None):
+def _closed_loop(plant_kw, kp, ki, days, sched=SCHED, td=0.0, deriv=True, cfg=None, tune=True):
     c = P.RegulationConfig()
     c.tuning = P.CorrectionTuning(kp=kp, ki=ki, td_s=td)
     c.gain_fine_threshold_c = 1.0
-    tuner = _tuner(kp=kp, ki=ki, td=td, deriv=deriv, cfg=cfg)
+    tuner = _tuner(kp=kp, ki=ki, td=td, deriv=deriv, cfg=cfg) if tune else None
     sim = RoomSim(PlantParams(**plant_kw), R, c, ProxySettings(), y0=19.0,
                   tuner=tuner, autotune_module=A, seed=3)
     tr = sim.run(days * 24, sched)
@@ -749,9 +749,8 @@ def _evening_overshoot(tr, day):
 class TestClosedLoop:
     def test_learns_to_stop_overshoot(self):
         tuner, tr = _closed_loop(LIVING, 0.6, 0.002, days=7)
-        frozen = P.AutotuneConfig(min_interval_up_s=1e12, min_interval_down_s=1e12)
-        _, fixed = _closed_loop(LIVING, 0.6, 0.002, days=7, cfg=frozen)
-        before = _evening_overshoot(fixed, 6)       # same day, tuner held still
+        _, fixed = _closed_loop(LIVING, 0.6, 0.002, days=7, tune=False)
+        before = _evening_overshoot(fixed, 6)       # same day, no tuner
         after = _evening_overshoot(tr, 6)
         assert before > 0.35
         assert after < 0.25

@@ -154,7 +154,7 @@ the cooling side.
 
 | Episode | Starts | Ends | Gives |
 |---|---|---|---|
-| **Heat-up** | Setpoint step up ≥ 0.5 °C (or heating resumes) with the room ≥ 0.4 °C below | 45 min after the peak, after 5 h, or early when the schedule moves on (kept only if braking had already happened; see below) | Dead time θ (tangent method, steps ≥ 0.8 °C), max heating rate, coast time, overshoot |
+| **Heat-up** | Setpoint step up ≥ 0.5 °C (or heating resumes) with the room ≥ 0.4 °C below | 45 min after the peak, after 5 h, or early when the schedule moves on (see below) | Dead time θ (tangent method, steps ≥ 0.8 °C), max heating rate, coast time, overshoot |
 | **Hold** | Setpoint steady ≥ 1 h, room within 0.5 °C | Evaluated every 3 h over a rolling 24 h buffer | Mean offset (last 3 h), oscillation (hysteresis count over the buffer), heating fraction |
 
 Nothing is learned while any of these apply: window or presence automation,
@@ -166,10 +166,21 @@ slope at that moment. It measures the plant, not the controller, so it is
 valid whether or not the brake was active.
 
 **Cut-short heat-ups.** Morning comfort periods often end before the room
-settles. A truncated episode keeps its dead time and heating rate. It keeps
-its overshoot only if that already shows *too much* overshoot, and it never
-contributes a coast time or a "stalled" verdict. A cut-off episode can
-therefore never argue for *less* braking.
+settles. In the real data, every morning heat-up was cut short by the
+08:00 switch to frost protection. A cut-short episode is kept if the TRV had
+been told to stop at least 15 min earlier, or if it ran at least 45 min. In
+that case:
+
+- it keeps its dead time and heating rate, but only once the room is past
+  its steepest rise;
+- it keeps its overshoot only if that already shows *too much*;
+- its coast is only a lower bound. It sets the brake until a complete
+  episode exists, and after that it counts only if it is longer than the
+  complete ones. Lower bounds can only *raise* the braking time;
+- it never gives a "stalled" verdict.
+
+A cut-off episode can therefore never argue for *less* braking. SIMC's Ki
+waits for two dead-time estimates.
 
 **Stalls only count when we stopped too early.** A heat-up that ends below
 target counts as "stalled" only if the TRV demand actually went ≤ 0. If
@@ -180,7 +191,8 @@ with a *manual* braking time (learning off) never raises Kp either.
 **Glitches are rejected per report.** The coordinator re-reads the room
 sensor every cycle, so one bad report can show up on several cycles. A
 spike filter keyed on the sensor's own report time rejects a report that
-jumps more than 0.5 °C, until the next report confirms it. A genuine change
+jumps more than 1 °C, until the next report confirms it or it has stood for
+15 minutes. A genuine change
 is delayed by one report at most. Samples stay one per cycle. An unchanged
 reading from a coarse (0.1 °C) sensor therefore counts as "no change", which
 decays the brake rather than freezing it. A 5-point running median sits on
@@ -203,18 +215,19 @@ Moves smaller than 5 % (Kp), 15 % (Ki) or 2 min (Td) are ignored as noise.
 This also stops a sliver of "more heat" riding along with a gentler change.
 
 Simulated result after two weeks, using the living-room and study models
-calibrated to the data above. Each row compares the same day with the
-tuner off ("fixed") and on:
+calibrated to the data above. Each row compares day 13 with no tuner
+("fixed") and with the tuner on. The heat-up times are for the morning
+heat-up (18 → 20 °C).
 
 | Room | | Overshoot (morning / evening) | Within 0.5 °C | Within 0.1 °C | Hold std. dev. |
 |---|---|---|---|---|---|
-| Living room | fixed | 0.75 / 0.43 °C | 34 min | 45 min | 0.16 °C |
-| | tuned | **0.15 / 0.18 °C** | 32 min | 62 min | 0.12 °C |
-| Study | fixed | 1.08 / 0.57 °C | 38 min | 51 min | 0.16 °C |
-| | tuned | **0.18 / 0.19 °C** | 36 min | 57 min | 0.13 °C |
+| Living room | fixed | 0.76 / 0.45 °C | 34 min | 45 min | 0.16 °C |
+| | tuned | **0.16 / 0.15 °C** | 32 min | 67 min | 0.10 °C |
+| Study | fixed | 0.99 / 0.57 °C | 36 min | 49 min | 0.16 °C |
+| | tuned | **0.14 / 0.16 °C** | 37 min | 62 min | 0.12 °C |
 
-Learned values: Td 24 min / Ki 0.00018 (living room) and Td 29 min /
-Ki 0.00015 (study). Kp stayed at 0.6 in both. Braking costs time only on the
+Learned values: Td 27 min / Ki 0.00019 (living room) and Td 34 min /
+Ki 0.00016 (study). Kp stayed at 0.6 in both. Braking costs time only on the
 *last* few tenths of a degree. The time to get within half a degree is
 unchanged.
 
@@ -224,15 +237,32 @@ radiators; noisy and glitchy sensors; sun gains; 0 °C outside; default
 180 s / 0.3 °C command settings; 0.5 °C command steps; an over-aggressive
 starting point (Kp 2.0, Ki 0.005); and derivative learning switched off.
 None left its bounds or needed a rollback. With derivative learning on,
-overshoot ended at ≤ 0.2 °C in every variant except those in §7. With it off,
-only Ki is tuned and overshoot fell less (1.04 → 0.71 °C). A deliberately
+overshoot ended at 0.10–0.25 °C in every variant except those in §7. With it
+off, only Ki is tuned and overshoot fell less (1.04 → 0.70 °C). A deliberately
 oscillating room (±0.65 °C, 9 h cycle) was calmed to about ±0.13 °C within
 five days.
 
 With production send settings (180 s / 0.3 °C) and random sunny afternoons
-(+0.4 °C/h on 40 % of days), 0 of 12 two-week runs rolled anything back.
-At +1 °C/h, 1 of 12 did. It blocked only a 10 % Ki increase, and braking
-carried on.
+(+0.4 °C/h or +1 °C/h on 40 % of days), none of 24 two-week runs rolled
+anything back.
+
+Sensors with 0.1 °C resolution, reporting every 30 s or every 5 min, were
+also simulated. Home Assistant's timestamp only moves when the value
+changes. Both still calm an oscillating room to ±0.13 °C and learn the
+brake (overshoot 0.21–0.22 °C).
+
+**Replay of the real recorder week.** Fed the real data, minute by minute,
+the tuner made these choices:
+
+| Room | Episodes | Learned so far | Would set |
+|---|---|---|---|
+| Living room | 4 (all cut short at 08:00) | dead time 17 min, coast ≥ 13 min | Td 0 → 10 min, Ki 0.003 → 0.0015 |
+| Study | 1 | coast ≥ 52 min | Td 0 → 5 min |
+| Second bedroom | 3 | coast ≥ 42 min | Td 0 → 15 min |
+| Master bedroom | 1 | rate 1.5 °C/h | nothing yet |
+
+These match the hand analysis in §1. Most of that week was summer mode, so
+there was little to learn from.
 
 ---
 
@@ -298,12 +328,11 @@ every step except an explicit rollback.
 ## 7. What it cannot fix
 
 - **A valve that does not close.** Heat keeps arriving whatever the demand.
-  The tuner sees no peak, learns no coast, and leaves things alone
-  (simulated: 0.65 → 0.54 °C).
+  The tuner sees no clear peak and learns little. Overshoot barely changes
+  (simulated: 0.65 → 0.62 °C), but nothing gets worse.
 - **Undersized radiators, or very cold weather.** Td runs to its 45 min cap
-  and overshoot stays around 0.25 °C. The last 0.1 °C arrives later (in the
-  0 °C-outside simulation the evening heat-up's half-degree time went from
-  139 to 159 min).
+  and overshoot stays around 0.25 °C. The last 0.1 °C arrives later: about
+  40 min later in the 0 °C-outside simulation.
 - **Sun and other free heat.** A sunny heat-up looks like more coast. The
   median over 5 heat-ups and the bounded trims absorb it.
 - **Rooms that are never heated from cold** (a constant setpoint, no
