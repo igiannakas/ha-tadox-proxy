@@ -15,7 +15,7 @@ from pathlib import Path
 # Module loading (HA-free)
 # ---------------------------------------------------------------------------
 
-_ROOT = Path(__file__).parent.parent / "custom_components" / "tadox_proxy"
+_ROOT = Path(__file__).parent.parent / "custom_components" / "roomstat"
 
 
 def _load(name: str):
@@ -627,34 +627,3 @@ class TestSavedState:
         assert s.preset == "eco"
         assert s.temp == 19.5
 
-
-# ---------------------------------------------------------------------------
-# Config entry migration: removed "follow physical thermostat" feature
-# ---------------------------------------------------------------------------
-
-class TestRemovedFeatureMigration:
-
-    def test_follow_options_are_stripped(self):
-        opts = {
-            "follow_tado_input": True,
-            "follow_threshold_c": 0.5,
-            "follow_grace_s": 20,
-            "sensor_grace_s": 300,
-            "urgent_decrease_threshold_c": 1,
-            "correction_kp": 0.6,
-        }
-        assert _ctrl_mod.strip_removed_options(opts) == {
-            "sensor_grace_s": 300,
-            "urgent_decrease_threshold_c": 1,
-            "correction_kp": 0.6,
-        }
-        assert "follow_tado_input" in opts  # input is not modified
-
-    def test_clean_options_unchanged(self):
-        opts = {"sensor_grace_s": 300}
-        assert _ctrl_mod.strip_removed_options(opts) == opts
-        assert _ctrl_mod.strip_removed_options({}) == {}
-
-    def test_switch_entity_marked_for_removal(self):
-        assert ("switch", "_follow_tado_input") in _ctrl_mod.REMOVED_ENTITIES
-        assert _ctrl_mod.CONFIG_ENTRY_MINOR_VERSION == 2

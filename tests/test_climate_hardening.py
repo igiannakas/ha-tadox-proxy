@@ -42,7 +42,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _COMP_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "custom_components", "tadox_proxy"
+    os.path.dirname(__file__), "..", "custom_components", "roomstat"
 )
 
 
@@ -55,16 +55,16 @@ def _load_module(name: str, path: str) -> types.ModuleType:
 
 
 _params = _load_module(
-    "tadox_proxy.parameters",
+    "roomstat.parameters",
     os.path.join(_COMP_DIR, "parameters.py"),
 )
 _reg = _load_module(
-    "tadox_proxy.regulation",
+    "roomstat.regulation",
     os.path.join(_COMP_DIR, "regulation.py"),
 )
 
 _ctrl = _load_module(
-    "tadox_proxy.climate_controllers",
+    "roomstat.climate_controllers",
     os.path.join(_COMP_DIR, "climate_controllers.py"),
 )
 
@@ -102,7 +102,7 @@ class TestClassLevelTempLimits:
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
-            if node.name != "TadoXProxyClimate":
+            if node.name != "RoomstatClimate":
                 continue
             for item in node.body:
                 # Handle both plain assignment and annotated assignment
@@ -125,14 +125,14 @@ class TestClassLevelTempLimits:
     def test_min_temp_class_level_is_5(self):
         assigns = self._get_class_level_assigns()
         assert "_attr_min_temp" in assigns, (
-            "_attr_min_temp must be a class-level attribute in TadoXProxyClimate"
+            "_attr_min_temp must be a class-level attribute in RoomstatClimate"
         )
         assert assigns["_attr_min_temp"] == 5.0
 
     def test_max_temp_class_level_is_25(self):
         assigns = self._get_class_level_assigns()
         assert "_attr_max_temp" in assigns, (
-            "_attr_max_temp must be a class-level attribute in TadoXProxyClimate"
+            "_attr_max_temp must be a class-level attribute in RoomstatClimate"
         )
         assert assigns["_attr_max_temp"] == 25.0
 
@@ -776,7 +776,7 @@ def _mirror_safe_float(value):
 
 
 def _mirror_comfort_target(options: dict, default: float = _COMFORT_DEFAULT) -> float:
-    """Mirror of TadoXProxyClimate._comfort_target (climate_presets.py).
+    """Mirror of RoomstatClimate._comfort_target (climate_presets.py).
 
         comfort = safe_float(options.get(CONF_COMFORT_TARGET))
         return comfort if comfort is not None else default

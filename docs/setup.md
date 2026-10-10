@@ -57,11 +57,11 @@ off, come back and check this first.
 4. Choose **Custom repositories**.
 5. Paste this address:
    ```
-   https://github.com/kinimodb/ha-tadox-proxy
+   https://github.com/igiannakas/ha-roomstat
    ```
 6. Set Category to **Integration**.
 7. Click **Add**.
-8. Search HACS for **Tado X Proxy Thermostat** and install it.
+8. Search HACS for **Roomstat** and install it.
 9. **Restart Home Assistant.** The integration will not appear until you do.
 
 ---
@@ -85,7 +85,7 @@ From now on you control the room through Home Assistant, not through the Tado ap
 
 1. Go to **Settings → Devices & Services**.
 2. Click **Add Integration** (bottom right).
-3. Search for **Tado X Proxy Thermostat**.
+3. Search for **Roomstat**.
 4. Fill in three fields:
 
 | Field | What to pick |
@@ -184,7 +184,7 @@ The [settings reference](settings.md) explains each one.
 ## Optional: windows and presence
 
 Two extras are worth setting up once the basics work. Both live under
-**Settings → Devices & Services → Tado X Proxy → Configure**.
+**Settings → Devices & Services → Roomstat → Configure**.
 
 **Window detection.** Pick a window contact sensor. When the window opens, the room
 drops to frost protection after 30 seconds. When it closes, the previous setting
@@ -243,12 +243,11 @@ settings. See the [tuning guide](../TUNING.md).
 - Are you looking at the right thermostat? The integration creates a **new** one.
   Changing the original Tado X radiator thermostat entity does nothing useful.
 - Give it 3 minutes. Commands are deliberately rate-limited to save batteries.
-- Check the logs: **Settings → System → Logs**, search for `tadox_proxy`.
+- Check the logs: **Settings → System → Logs**, search for `roomstat`.
 
 ### Still stuck
 
-Open an [issue on GitHub](https://github.com/kinimodb/ha-tadox-proxy/issues) or ask
-in the [community thread](https://community.home-assistant.io/t/tado-x-proxy-thermostat-temperature-control-for-tado-x/995710).
+Open an [issue on GitHub](https://github.com/igiannakas/ha-roomstat/issues).
 
 Helpful things to include: which radiator type you have, where your sensor sits,
 what you set, and what actually happened.

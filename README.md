@@ -1,15 +1,17 @@
-# Tado X Proxy Thermostat
+# Roomstat
 
-[![Tests](https://github.com/kinimodb/ha-tadox-proxy/actions/workflows/tests.yml/badge.svg)](https://github.com/kinimodb/ha-tadox-proxy/actions/workflows/tests.yml)
-![Version](https://img.shields.io/badge/version-1.6.0-blue)
+Heats your room to the temperature you set, using Tado X radiator thermostats and Home Assistant.
+
+[![Tests](https://github.com/igiannakas/ha-roomstat/actions/workflows/tests.yml/badge.svg)](https://github.com/igiannakas/ha-roomstat/actions/workflows/tests.yml)
+![Version](https://img.shields.io/badge/version-2.0.0-blue)
 ![HA](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-41BDF5)
 
 **Read this page in your language:**
-[Deutsch](https://github-com.translate.goog/kinimodb/ha-tadox-proxy?_x_tr_sl=en&_x_tr_tl=de&_x_tr_hl=de) ·
-[Nederlands](https://github-com.translate.goog/kinimodb/ha-tadox-proxy?_x_tr_sl=en&_x_tr_tl=nl&_x_tr_hl=nl) ·
-[Français](https://github-com.translate.goog/kinimodb/ha-tadox-proxy?_x_tr_sl=en&_x_tr_tl=fr&_x_tr_hl=fr) ·
-[Italiano](https://github-com.translate.goog/kinimodb/ha-tadox-proxy?_x_tr_sl=en&_x_tr_tl=it&_x_tr_hl=it) ·
-[Español](https://github-com.translate.goog/kinimodb/ha-tadox-proxy?_x_tr_sl=en&_x_tr_tl=es&_x_tr_hl=es)
+[Deutsch](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=de&_x_tr_hl=de) ·
+[Nederlands](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=nl&_x_tr_hl=nl) ·
+[Français](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=fr&_x_tr_hl=fr) ·
+[Italiano](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=it&_x_tr_hl=it) ·
+[Español](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=es&_x_tr_hl=es)
 
 *(Automatic translation by Google. The English text is the original.)*
 
@@ -152,8 +154,7 @@ the room stays cold, the temperature swings up and down, or the integration seem
 do nothing at all.
 
 If that does not help, open an
-[issue on GitHub](https://github.com/kinimodb/ha-tadox-proxy/issues) or ask in the
-[Home Assistant community thread](https://community.home-assistant.io/t/tado-x-proxy-thermostat-temperature-control-for-tado-x/995710).
+[issue on GitHub](https://github.com/igiannakas/ha-roomstat/issues).
 
 **Known problem:** configuring the integration in the iOS Companion App crashes when
 you pick an entity. This is a bug in Home Assistant itself, not in this integration.

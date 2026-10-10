@@ -321,7 +321,7 @@ If the sensor is down longer than the grace period, the control loop pauses auto
 
 ### Integration Not Responding
 
-1. Check Home Assistant logs (Settings > System > Logs > "tadox_proxy").
+1. Check Home Assistant logs (Settings > System > Logs > "roomstat").
 2. Check coordinator refresh: Data is updated every 60s.
 3. Test a service call: Developer Tools > Services > `climate.set_temperature` on the proxy entity.
 
@@ -341,7 +341,7 @@ resists every adjustment, the cause is usually physical rather than numerical:
 - **The radiator needs bleeding, or the valve is stuck.**
 
 If none of those apply, please open an
-[issue](https://github.com/kinimodb/ha-tadox-proxy/issues) with your radiator type,
+[issue](https://github.com/igiannakas/ha-roomstat/issues) with your radiator type,
 sensor position, the values you tried, and what happened. Reports like that are what
 improve the defaults for everyone.
 

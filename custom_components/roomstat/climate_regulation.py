@@ -1,4 +1,4 @@
-"""Regulation cycle mixin for TadoXProxyClimate."""
+"""Regulation cycle mixin for RoomstatClimate."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class RegulationMixin:
-    """Regulation cycle methods extracted from TadoXProxyClimate."""
+    """Regulation cycle methods extracted from RoomstatClimate."""
 
     def _write_state_with_binary_sensor(self) -> None:
         """Write HA state for this entity and linked sub-entities."""

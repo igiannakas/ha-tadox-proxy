@@ -1,5 +1,5 @@
 """
-Feedforward + PI Regulation for Tado X Proxy.
+Feedforward + PI Regulation for Roomstat.
 
 Strategy
 --------
@@ -89,7 +89,7 @@ class RegulationResult:
 # ---------------------------------------------------------------------------
 
 class FeedforwardPiRegulator:
-    """Feedforward + PI regulator for Tado X proxy thermostats."""
+    """Feedforward + PI regulator for Roomstat thermostats."""
 
     def __init__(self, config: RegulationConfig) -> None:
         self.cfg = config

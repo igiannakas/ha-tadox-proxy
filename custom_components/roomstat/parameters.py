@@ -1,4 +1,4 @@
-"""Central parameter defaults for tadox_proxy."""
+"""Central parameter defaults for roomstat."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -357,10 +357,10 @@ Assistant dependencies so it can be read and tested on its own:
 
 | File | Contains |
 |---|---|
-| `custom_components/tadox_proxy/regulation.py` | The entire control loop, ~250 lines |
-| `custom_components/tadox_proxy/autotune.py` | The background auto-tuner |
-| `custom_components/tadox_proxy/parameters.py` | Every default value, with rationale |
-| `custom_components/tadox_proxy/climate_controllers.py` | Window, presence, summer and schedule state machines |
+| `custom_components/roomstat/regulation.py` | The entire control loop, ~250 lines |
+| `custom_components/roomstat/autotune.py` | The background auto-tuner |
+| `custom_components/roomstat/parameters.py` | Every default value, with rationale |
+| `custom_components/roomstat/climate_controllers.py` | Window, presence, summer and schedule state machines |
 | `tests/` | Test suite, runnable without Home Assistant |
 
 The formula above corresponds directly to `FeedforwardPiRegulator.compute()`.

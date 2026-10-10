@@ -16,7 +16,7 @@
   },
   "entity": {
     "climate": {
-      "tadox_proxy": {
+      "roomstat": {
         "default": "mdi:thermostat",
         "state": {
           "heat": "mdi:thermostat",

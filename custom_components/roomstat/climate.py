@@ -1,4 +1,4 @@
-"""Climate Entity for Tado X Proxy."""
+"""Climate Entity for Roomstat."""
 from __future__ import annotations
 
 import asyncio
@@ -135,9 +135,9 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Tado X Proxy climate entity."""
+    """Set up the Roomstat climate entity."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    entity = TadoXProxyClimate(
+    entity = RoomstatClimate(
         coordinator=coordinator,
         unique_id=entry.entry_id,
         config_entry=entry,
@@ -146,7 +146,7 @@ async def async_setup_entry(
     async_add_entities([entity])
 
 
-class TadoXProxyClimate(
+class RoomstatClimate(
     RegulationMixin,
     PresetMixin,
     ScheduleMixin,
@@ -168,7 +168,7 @@ class TadoXProxyClimate(
     )
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_preset_modes = PRESET_LIST
-    _attr_translation_key = "tadox_proxy"
+    _attr_translation_key = "roomstat"
     # Class-level defaults so HA's CachedProperties metaclass sees 5/25
     # BEFORE super().__init__() runs (prevents fallback to HA's 7/35).
     _attr_min_temp: float = 5.0
@@ -395,7 +395,7 @@ class TadoXProxyClimate(
         return DeviceInfo(
             identifiers={(DOMAIN, self._config_entry.entry_id)},
             name=self._config_entry.title,
-            manufacturer="Tado X Proxy",
+            manufacturer="Roomstat",
             model="Feedforward + PI Regulator",
         )
 

@@ -1,4 +1,4 @@
-# Contributing – Tado X Proxy
+# Contributing – Roomstat
 
 ## PR mergen
 

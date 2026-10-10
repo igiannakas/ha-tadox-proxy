@@ -1,4 +1,4 @@
-"""Button entities for Tado X Proxy: resume the schedule, reset auto-tune."""
+"""Button entities for Roomstat: resume the schedule, reset auto-tune."""
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
@@ -17,7 +17,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Tado X Proxy button entities."""
+    """Set up Roomstat button entities."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([
         ResumeScheduleButton(coordinator, entry),

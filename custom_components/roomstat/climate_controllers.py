@@ -1,4 +1,4 @@
-"""Internal state-machine controllers for TadoXProxyClimate.
+"""Internal state-machine controllers for RoomstatClimate.
 
 These classes hold their own state and can be tested independently of Home
 Assistant.  They only import HA helpers lazily (inside methods that schedule
@@ -18,7 +18,6 @@ Architecture
 - ``ScheduleController`` / ``parse_schedule_preset`` – follow an external
   schedule helper, with manual overrides that end at the next schedule change
   or after a configurable time (whichever comes first)
-- ``strip_removed_options`` – config entry migration for removed features
 """
 from __future__ import annotations
 
@@ -724,33 +723,6 @@ class ScheduleController:
             persisted.schedule_override_until if self.override_active else None
         )
         self.override_sticky = self.override_active and persisted.schedule_override_sticky
-
-
-# ---------------------------------------------------------------------------
-# Config entry migration (removed features)
-# ---------------------------------------------------------------------------
-
-# Minor version of the config entry.  1 -> 2: the "follow physical
-# thermostat" feature was removed (its switch and its two thresholds).
-CONFIG_ENTRY_MINOR_VERSION = 2
-
-# Options left behind by removed features.
-REMOVED_OPTION_KEYS: tuple[str, ...] = (
-    "follow_tado_input",
-    "follow_threshold_c",
-    "follow_grace_s",
-)
-
-# Entities of removed features: (entity domain, unique-id suffix after the
-# config entry id).
-REMOVED_ENTITIES: tuple[tuple[str, str], ...] = (
-    ("switch", "_follow_tado_input"),
-)
-
-
-def strip_removed_options(options: Mapping[str, Any]) -> dict[str, Any]:
-    """Return the options without the keys of removed features."""
-    return {k: v for k, v in options.items() if k not in REMOVED_OPTION_KEYS}
 
 
 # ---------------------------------------------------------------------------

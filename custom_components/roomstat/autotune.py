@@ -1,4 +1,4 @@
-"""Background PI(D) auto-tuning for the Tado X proxy (HA-independent).
+"""Background PI(D) auto-tuning for Roomstat (HA-independent).
 
 Design summary (full rationale: docs/pi-autotune.md)
 ----------------------------------------------------

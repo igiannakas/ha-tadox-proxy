@@ -1,4 +1,4 @@
-"""Config and Options flows for Tado X Proxy."""
+"""Config and Options flows for Roomstat."""
 from __future__ import annotations
 
 import voluptuous as vol
@@ -7,7 +7,6 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 
-from .climate_controllers import CONFIG_ENTRY_MINOR_VERSION
 from .const import (
     CONF_AUTOTUNE_DERIVATIVE,
     CONF_AUTOTUNE_ENABLED,
@@ -43,11 +42,10 @@ from .const import (
 from .parameters import DEFAULT_SENSOR_GRACE_S, BehaviourConfig, RegulationConfig
 
 
-class TadoxProxyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class RoomstatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """UI setup for the integration (initial setup)."""
 
     VERSION = 1
-    MINOR_VERSION = CONFIG_ENTRY_MINOR_VERSION
 
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
@@ -55,7 +53,7 @@ class TadoxProxyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             source_entity_id = user_input[CONF_SOURCE_ENTITY_ID]
             ext_temp_entity_id = user_input[CONF_EXTERNAL_TEMPERATURE_ENTITY_ID]
-            name = (user_input.get(CONF_NAME) or "").strip() or "Tado X Proxy"
+            name = (user_input.get(CONF_NAME) or "").strip() or "Roomstat"
 
             # EntitySelector already validates entity existence on the frontend.
             # Redundant backend registry checks caused false negatives in the
@@ -80,7 +78,7 @@ class TadoxProxyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_EXTERNAL_TEMPERATURE_ENTITY_ID): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
                 ),
-                vol.Required(CONF_NAME, default="Tado X Proxy"): str,
+                vol.Required(CONF_NAME, default="Roomstat"): str,
             }
         )
 
@@ -89,10 +87,10 @@ class TadoxProxyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
-        return TadoxProxyOptionsFlow()
+        return RoomstatOptionsFlow()
 
 
-class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
+class RoomstatOptionsFlow(config_entries.OptionsFlow):
     """Per-entry options (gear icon) for tuning, presets & sensor selection."""
 
     async def async_step_init(self, user_input=None):

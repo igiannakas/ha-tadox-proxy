@@ -19,7 +19,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _COMP_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "custom_components", "tadox_proxy"
+    os.path.dirname(__file__), "..", "custom_components", "roomstat"
 )
 
 
@@ -32,7 +32,7 @@ def _load_module(name: str, path: str) -> types.ModuleType:
 
 
 _params = _load_module(
-    "tadox_proxy.parameters",
+    "roomstat.parameters",
     os.path.join(_COMP_DIR, "parameters.py"),
 )
 

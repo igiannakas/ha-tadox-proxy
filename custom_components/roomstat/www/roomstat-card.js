@@ -1,18 +1,18 @@
 /*
- * Tado X Proxy – room card
+ * Roomstat – room card
  *
- * One card per room for a tadox_proxy thermostat: current → target
+ * One card per room for a roomstat thermostat: current → target
  * temperature, heating %, what the room is doing right now, and five mode
  * buttons (Off · Night · Day · Boost · Schedule). Boost asks for confirmation
  * in a built-in dialog. No templates or card-mod needed.
  *
- *   type: custom:tadox-room-card
+ *   type: custom:roomstat-card
  *   entity: climate.living_room_thermostat
  *   name: Living Room          # optional, defaults to the area name
  *   icon: mdi:sofa             # optional, defaults to the area icon
  *   heating_entity: sensor.x   # optional, found automatically for Tado X
  *
- * Served and registered by the tadox_proxy integration; no resource to add.
+ * Served and registered by the roomstat integration; no resource to add.
  */
 
 const CARD_VERSION = "1.4.3";
@@ -204,7 +204,7 @@ const DIALOG_CSS = `
 
 function confirmDialog({ title, icon, color, bodyIcon, primary, secondary, confirmLabel }) {
   return new Promise((resolve) => {
-    const host = document.createElement("tadox-confirm-dialog");
+    const host = document.createElement("roomstat-confirm-dialog");
     const root = host.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>${DIALOG_CSS}</style>
@@ -297,10 +297,10 @@ const CARD_CSS = `
   .warning { padding: 12px; color: var(--error-color, #db4437); }
 `;
 
-class TadoxRoomCard extends HTMLElement {
+class RoomstatCard extends HTMLElement {
   static getStubConfig(hass) {
     const first = Object.values(hass.entities || {}).find(
-      (e) => e.platform === "tadox_proxy" && e.entity_id.startsWith("climate."),
+      (e) => e.platform === "roomstat" && e.entity_id.startsWith("climate."),
     );
     return { entity: first ? first.entity_id : "" };
   }
@@ -308,7 +308,7 @@ class TadoxRoomCard extends HTMLElement {
   static getConfigForm() {
     return {
       schema: [
-        { name: "entity", required: true, selector: { entity: { domain: "climate", integration: "tadox_proxy" } } },
+        { name: "entity", required: true, selector: { entity: { domain: "climate", integration: "roomstat" } } },
         {
           type: "grid",
           name: "",
@@ -328,7 +328,7 @@ class TadoxRoomCard extends HTMLElement {
 
   setConfig(config) {
     if (!config || !config.entity || !String(config.entity).startsWith("climate.")) {
-      throw new Error("Set 'entity' to a Tado X Proxy climate entity");
+      throw new Error("Set 'entity' to a Roomstat climate entity");
     }
     this._config = { ...config };
     this._ids = null;
@@ -529,17 +529,17 @@ class TadoxRoomCard extends HTMLElement {
 async function registerCard() {
   await window.customElements.whenDefined("home-assistant");
   const registry = window.customElements;
-  if (registry.get("tadox-room-card")) return;
-  registry.define("tadox-room-card", TadoxRoomCard);
+  if (registry.get("roomstat-card")) return;
+  registry.define("roomstat-card", RoomstatCard);
   window.customCards = window.customCards || [];
   window.customCards.push({
-    type: "tadox-room-card",
+    type: "roomstat-card",
     name: "Tado X room",
-    description: "Room temperature, heating and mode buttons for a Tado X Proxy thermostat.",
+    description: "Room temperature, heating and mode buttons for a Roomstat thermostat.",
     preview: true,
-    documentationURL: "https://github.com/kinimodb/ha-tadox-proxy/blob/main/docs/dashboard-card.md",
+    documentationURL: "https://github.com/igiannakas/ha-roomstat/blob/main/docs/dashboard-card.md",
   });
-  console.info(`%c TADOX-ROOM-CARD %c ${CARD_VERSION} `, "background:#f44336;color:#fff", "");
+  console.info(`%c ROOMSTAT-CARD %c ${CARD_VERSION} `, "background:#f44336;color:#fff", "");
 }
 
 registerCard();

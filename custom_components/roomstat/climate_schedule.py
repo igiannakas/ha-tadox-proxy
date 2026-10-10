@@ -1,4 +1,4 @@
-"""Schedule-following mixin for TadoXProxyClimate.
+"""Schedule-following mixin for RoomstatClimate.
 
 The proxy follows an external schedule helper (an ``input_select`` set by a
 scheduler such as Scheduler card/component).  Its state is the preset the room
@@ -39,7 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ScheduleMixin:
-    """Schedule following extracted from TadoXProxyClimate."""
+    """Schedule following extracted from RoomstatClimate."""
 
     # ------------------------------------------------------------------
     # Read-only helpers

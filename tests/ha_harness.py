@@ -1,7 +1,7 @@
-"""Shared end-to-end harness: the real TadoXProxyClimate on a stubbed HA.
+"""Shared end-to-end harness: the real RoomstatClimate on a stubbed HA.
 
 Installs a minimal Home Assistant stub (only when Home Assistant itself is not
-importable) and loads the integration package under ``tadox_proxy_e2e`` so the
+importable) and loads the integration package under ``roomstat_e2e`` so the
 real climate / preset / summer code can be exercised without an HA bootstrap.
 
 Not a test module (no ``test_`` prefix); imported by the e2e test files.
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-_ROOT = Path(__file__).parent.parent / "custom_components" / "tadox_proxy"
+_ROOT = Path(__file__).parent.parent / "custom_components" / "roomstat"
 
 try:  # pragma: no cover - depends on the environment
     import homeassistant  # noqa: F401
@@ -137,7 +137,7 @@ def _install_ha_stubs() -> None:
 
 
 def _load_entity_package():
-    pkg_name = "tadox_proxy_e2e"
+    pkg_name = "roomstat_e2e"
     pkg = types.ModuleType(pkg_name)
     pkg.__path__ = [str(_ROOT)]
     sys.modules[pkg_name] = pkg
@@ -237,7 +237,7 @@ def _make_entity(options=None, *, window=True, presence=False, summer=False,
     if schedule:
         opts["schedule_entity_id"] = SCHEDULE
     opts.update(options or {})
-    ent = _climate.TadoXProxyClimate(
+    ent = _climate.RoomstatClimate(
         coordinator=_Coordinator(), unique_id="u", config_entry=_Entry(opts)
     )
     ent.hass = _Hass()

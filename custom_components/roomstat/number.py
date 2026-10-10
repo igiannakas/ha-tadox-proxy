@@ -1,4 +1,4 @@
-"""Number entities for Tado X Proxy preset temperatures."""
+"""Number entities for Roomstat preset temperatures."""
 from __future__ import annotations
 
 import logging
@@ -73,7 +73,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Tado X Proxy number entities."""
+    """Set up Roomstat number entities."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
         PresetTemperatureNumber(coordinator, entry, desc)

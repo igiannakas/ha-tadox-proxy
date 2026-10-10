@@ -1,0 +1,11 @@
+{
+  "domain": "roomstat",
+  "name": "Roomstat",
+  "version": "2.0.0",
+  "config_flow": true,
+  "dependencies": ["frontend", "http", "lovelace"],
+  "platforms": ["binary_sensor", "button", "climate", "number", "sensor"],
+  "iot_class": "local_push",
+  "documentation": "https://github.com/igiannakas/ha-roomstat",
+  "issue_tracker": "https://github.com/igiannakas/ha-roomstat/issues"
+}

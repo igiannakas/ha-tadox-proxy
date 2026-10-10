@@ -1,4 +1,4 @@
-"""Preset management mixin for TadoXProxyClimate."""
+"""Preset management mixin for RoomstatClimate."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def async_call_later_boost(hass, delay_s, callback):
 
 
 class PresetMixin:
-    """Preset management methods extracted from TadoXProxyClimate."""
+    """Preset management methods extracted from RoomstatClimate."""
 
     # ------------------------------------------------------------------
     # Boost timer helpers

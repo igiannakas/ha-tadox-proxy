@@ -19,7 +19,7 @@ from pathlib import Path
 # Module loading (HA-free)
 # ---------------------------------------------------------------------------
 
-_ROOT = Path(__file__).parent.parent / "custom_components" / "tadox_proxy"
+_ROOT = Path(__file__).parent.parent / "custom_components" / "roomstat"
 
 
 def _load(name: str):

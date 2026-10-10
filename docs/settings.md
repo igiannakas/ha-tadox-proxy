@@ -78,7 +78,7 @@ temperature in a room. It carries extra attributes: `last_valid_reading`,
 ## Window and presence detection
 
 Both are optional. Configure them under
-**Settings → Devices & Services → Tado X Proxy → Configure**. They work
+**Settings → Devices & Services → Roomstat → Configure**. They work
 independently and can both be active at once.
 
 ### Window detection
@@ -239,7 +239,7 @@ glitchy reading cannot flip your room into Away.
 ## Adjustable settings
 
 All of these live under
-**Settings → Devices & Services → Tado X Proxy → Configure**.
+**Settings → Devices & Services → Roomstat → Configure**.
 
 > Changing these is not part of normal use. If a room is misbehaving, work through
 > the [tuning guide](../TUNING.md) instead of adjusting values at random — it tells

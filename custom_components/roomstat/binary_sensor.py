@@ -1,4 +1,4 @@
-"""Binary sensor entity for Tado X Proxy sensor degradation."""
+"""Binary sensor entity for Roomstat sensor degradation."""
 from __future__ import annotations
 
 import time
@@ -22,14 +22,14 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Tado X Proxy binary sensor entities."""
+    """Set up Roomstat binary sensor entities."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    entity = TadoXProxySensorDegradedBinarySensor(coordinator, entry)
+    entity = RoomstatSensorDegradedBinarySensor(coordinator, entry)
     coordinator.binary_sensor_entity = entity
     async_add_entities([entity])
 
 
-class TadoXProxySensorDegradedBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class RoomstatSensorDegradedBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor indicating external temperature sensor degradation.
 
     Turns on when the external room temperature sensor becomes unavailable

@@ -17,7 +17,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _COMP_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "custom_components", "tadox_proxy"
+    os.path.dirname(__file__), "..", "custom_components", "roomstat"
 )
 
 def _load_module(name: str, path: str) -> types.ModuleType:
@@ -30,11 +30,11 @@ def _load_module(name: str, path: str) -> types.ModuleType:
 
 # Load parameters first (no HA dependency), then regulation (depends on parameters)
 _params = _load_module(
-    "tadox_proxy.parameters",
+    "roomstat.parameters",
     os.path.join(_COMP_DIR, "parameters.py"),
 )
 _reg = _load_module(
-    "tadox_proxy.regulation",
+    "roomstat.regulation",
     os.path.join(_COMP_DIR, "regulation.py"),
 )
 

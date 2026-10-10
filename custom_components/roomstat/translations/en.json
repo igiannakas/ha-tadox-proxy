@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Tado X Proxy Thermostat",
+        "title": "Roomstat",
         "description": "One entry controls exactly one Tado X radiator thermostat (TRV). If a room has several radiators, add one entry per TRV and point them all at the same room temperature sensor.",
         "data": {
           "source_entity_id": "Tado X radiator thermostat (TRV)",
@@ -162,7 +162,7 @@
   },
   "entity": {
     "climate": {
-      "tadox_proxy": {
+      "roomstat": {
         "state_attributes": {
           "hvac_action": {
             "state": {

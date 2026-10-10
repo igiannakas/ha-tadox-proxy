@@ -1,4 +1,4 @@
-"""Sensor entities for Tado X Proxy.
+"""Sensor entities for Roomstat.
 
 * boost and schedule-override countdowns;
 * the controller gains in use (Kp, Ki, derivative time) and the auto-tuner's
@@ -151,19 +151,19 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Tado X Proxy sensor entities."""
+    """Set up Roomstat sensor entities."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    entity = TadoXProxyBoostTimerSensor(coordinator, entry)
+    entity = RoomstatBoostTimerSensor(coordinator, entry)
     coordinator.sensor_entity = entity
-    override = TadoXProxyScheduleOverrideSensor(coordinator, entry)
+    override = RoomstatScheduleOverrideSensor(coordinator, entry)
     coordinator.schedule_sensor_entity = override
-    tuning = [TadoXProxyTuningSensor(coordinator, entry, d) for d in TUNING_SENSORS]
+    tuning = [RoomstatTuningSensor(coordinator, entry, d) for d in TUNING_SENSORS]
     # Written by the regulation cycle so a tuning change shows immediately.
     coordinator.tuning_entities = tuning
     async_add_entities([entity, override, *tuning])
 
 
-class TadoXProxyTuningSensor(CoordinatorEntity, SensorEntity):
+class RoomstatTuningSensor(CoordinatorEntity, SensorEntity):
     """Controller gain or auto-tune diagnostic, read from the climate entity."""
 
     _attr_has_entity_name = True
@@ -214,7 +214,7 @@ class TadoXProxyTuningSensor(CoordinatorEntity, SensorEntity):
         return fn(climate)
 
 
-class TadoXProxyBoostTimerSensor(CoordinatorEntity, SensorEntity):
+class RoomstatBoostTimerSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing remaining boost timer minutes.
 
     Reports 0 when boost is not active, otherwise the remaining
@@ -250,7 +250,7 @@ class TadoXProxyBoostTimerSensor(CoordinatorEntity, SensorEntity):
         return climate.boost_remaining_minutes
 
 
-class TadoXProxyScheduleOverrideSensor(CoordinatorEntity, SensorEntity):
+class RoomstatScheduleOverrideSensor(CoordinatorEntity, SensorEntity):
     """Minutes left before a manual change hands back to the schedule.
 
     0 when the schedule is being followed, or when the override has no timer

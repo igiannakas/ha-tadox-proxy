@@ -1,6 +1,6 @@
 """Load the HA-free modules (parameters, regulation, autotune) for tests.
 
-Not a test module.  Loads them as ``tadox_proxy_pure.*`` so relative imports
+Not a test module.  Loads them as ``roomstat_pure.*`` so relative imports
 work without importing the package ``__init__`` (which needs Home Assistant).
 """
 from __future__ import annotations
@@ -10,8 +10,8 @@ import sys
 import types
 from pathlib import Path
 
-_ROOT = Path(__file__).parent.parent / "custom_components" / "tadox_proxy"
-_PKG = "tadox_proxy_pure"
+_ROOT = Path(__file__).parent.parent / "custom_components" / "roomstat"
+_PKG = "roomstat_pure"
 
 
 def _load(name: str) -> types.ModuleType:

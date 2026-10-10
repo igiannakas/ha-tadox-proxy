@@ -1,7 +1,7 @@
 """Serve the dashboard card and load it on every dashboard.
 
-The card lives in ``www/tadox-room-card.js`` and is served from
-``/tadox_proxy/tadox-room-card.js``. The URL carries a hash of the file so
+The card lives in ``www/roomstat-card.js`` and is served from
+``/roomstat/roomstat-card.js``. The URL carries a hash of the file so
 browsers pick up a new version after an update.
 
 It is loaded as a dashboard resource (the same list HACS uses for cards), so it
@@ -22,8 +22,8 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-CARD_FILE = Path(__file__).parent / "www" / "tadox-room-card.js"
-CARD_URL = f"/{DOMAIN}/tadox-room-card.js"
+CARD_FILE = Path(__file__).parent / "www" / "roomstat-card.js"
+CARD_URL = f"/{DOMAIN}/roomstat-card.js"
 _REGISTERED = f"{DOMAIN}_card_registered"
 
 

@@ -1,4 +1,4 @@
-"""Diagnostics support for Tado X Proxy."""
+"""Diagnostics support for Roomstat."""
 from __future__ import annotations
 
 from typing import Any

@@ -34,7 +34,7 @@ from tests.ha_harness import (
     reset_timers,
 )
 
-_ROOT = Path(__file__).parent.parent / "custom_components" / "tadox_proxy"
+_ROOT = Path(__file__).parent.parent / "custom_components" / "roomstat"
 
 
 def _load(name: str):

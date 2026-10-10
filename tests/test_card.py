@@ -1,6 +1,6 @@
 """Dashboard card: served once from the integration, and fed by the climate.
 
-The card (``www/tadox-room-card.js``) reads two climate attributes that exist
+The card (``www/roomstat-card.js``) reads two climate attributes that exist
 only for it: ``boost_duration_min`` for its Boost confirmation text and
 ``source_entity_id`` to find the Tado heating % sensor.
 """
@@ -16,18 +16,18 @@ from pathlib import Path
 
 from tests.ha_harness import TRV, _make_entity, _run, _start, e2e, reset_timers
 
-_ROOT = Path(__file__).parent.parent / "custom_components" / "tadox_proxy"
+_ROOT = Path(__file__).parent.parent / "custom_components" / "roomstat"
 
 
 def _load_card_module():
     """Load card.py with just enough stubs; it imports frontend/http lazily."""
     calls: dict = {"js": []}
-    pkg = types.ModuleType("tadox_card_t")
+    pkg = types.ModuleType("roomstat_card_t")
     pkg.__path__ = [str(_ROOT)]
-    sys.modules["tadox_card_t"] = pkg
-    const = types.ModuleType("tadox_card_t.const")
-    const.DOMAIN = "tadox_proxy"
-    sys.modules["tadox_card_t.const"] = const
+    sys.modules["roomstat_card_t"] = pkg
+    const = types.ModuleType("roomstat_card_t.const")
+    const.DOMAIN = "roomstat"
+    sys.modules["roomstat_card_t.const"] = const
     if "homeassistant.core" not in sys.modules:
         sys.modules["homeassistant.core"] = types.ModuleType("homeassistant.core")
     sys.modules["homeassistant.core"].HomeAssistant = object
@@ -43,7 +43,7 @@ def _load_card_module():
     sys.modules["homeassistant.components.frontend"].add_extra_js_url = (
         lambda hass, url: calls["js"].append(url)
     )
-    spec = importlib.util.spec_from_file_location("tadox_card_t.card", _ROOT / "card.py")
+    spec = importlib.util.spec_from_file_location("roomstat_card_t.card", _ROOT / "card.py")
     card = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(card)
     return card, calls
@@ -101,8 +101,8 @@ class _Hass:
 
 
 def test_card_file_ships_with_the_integration():
-    js = (_ROOT / "www" / "tadox-room-card.js").read_text(encoding="utf-8")
-    assert 'registry.define("tadox-room-card"' in js
+    js = (_ROOT / "www" / "roomstat-card.js").read_text(encoding="utf-8")
+    assert 'registry.define("roomstat-card"' in js
     assert 'whenDefined("home-assistant")' in js
     assert "getConfigForm" in js
 
@@ -115,15 +115,15 @@ def test_card_is_served_once_with_a_cache_busting_hash():
 
     assert len(hass.http.paths) == 1
     cfg = hass.http.paths[0]
-    assert cfg.url_path == "/tadox_proxy/tadox-room-card.js"
-    assert Path(cfg.path) == _ROOT / "www" / "tadox-room-card.js"
+    assert cfg.url_path == "/roomstat/roomstat-card.js"
+    assert Path(cfg.path) == _ROOT / "www" / "roomstat-card.js"
     digest = hashlib.sha256(Path(cfg.path).read_bytes()).hexdigest()[:12]
-    assert calls["js"] == [f"/tadox_proxy/tadox-room-card.js?v={digest}"]
+    assert calls["js"] == [f"/roomstat/roomstat-card.js?v={digest}"]
     assert re.fullmatch(r"[0-9a-f]{12}", digest)
 
 
 def _digest():
-    return hashlib.sha256((_ROOT / "www" / "tadox-room-card.js").read_bytes()).hexdigest()[:12]
+    return hashlib.sha256((_ROOT / "www" / "roomstat-card.js").read_bytes()).hexdigest()[:12]
 
 
 def test_card_becomes_a_dashboard_resource_when_resources_are_ui_managed():
@@ -131,7 +131,7 @@ def test_card_becomes_a_dashboard_resource_when_resources_are_ui_managed():
     resources = _Resources([{"id": "a", "res_type": "module", "url": "/hacsfiles/x.js"}])
     hass = _Hass(resources=resources)
     asyncio.run(card.async_register_card(hass))
-    url = f"/tadox_proxy/tadox-room-card.js?v={_digest()}"
+    url = f"/roomstat/roomstat-card.js?v={_digest()}"
     assert resources.items[-1] == {"id": "1", "res_type": "module", "url": url}
     assert calls["js"] == []  # not also added as an early extra module
 
@@ -139,11 +139,11 @@ def test_card_becomes_a_dashboard_resource_when_resources_are_ui_managed():
 def test_existing_card_resource_is_moved_to_the_new_version():
     card, calls = _load_card_module()
     resources = _Resources(
-        [{"id": "7", "res_type": "module", "url": "/tadox_proxy/tadox-room-card.js?v=old"}]
+        [{"id": "7", "res_type": "module", "url": "/roomstat/roomstat-card.js?v=old"}]
     )
     asyncio.run(card.async_register_card(_Hass(resources=resources)))
     assert len(resources.items) == 1
-    assert resources.items[0]["url"] == f"/tadox_proxy/tadox-room-card.js?v={_digest()}"
+    assert resources.items[0]["url"] == f"/roomstat/roomstat-card.js?v={_digest()}"
 
 
 def test_card_registration_is_skipped_without_http():

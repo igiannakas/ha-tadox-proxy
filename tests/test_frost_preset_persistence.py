@@ -12,7 +12,7 @@ appeared, and the window/presence/boost automation state was not persisted.
 
 Two layers of tests:
 - Pure helpers in ``climate_controllers.py`` (imported directly, HA-free).
-- End-to-end tests against the *real* ``TadoXProxyClimate`` / ``PresetMixin``
+- End-to-end tests against the *real* ``RoomstatClimate`` / ``PresetMixin``
   code via ``tests/ha_harness.py`` (minimal Home Assistant stub).
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ from tests.ha_harness import (
     reset_timers,
 )
 
-_ROOT = Path(__file__).parent.parent / "custom_components" / "tadox_proxy"
+_ROOT = Path(__file__).parent.parent / "custom_components" / "roomstat"
 
 
 # ===========================================================================

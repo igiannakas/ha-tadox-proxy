@@ -2,7 +2,8 @@
 
 ## Projekt
 
-Home Assistant Custom Component (HACS) – Proxy-Thermostat für Tado X TRVs.
+**Roomstat** (Domain `roomstat`, Repo `igiannakas/ha-roomstat`) – Home Assistant Custom
+Component (HACS), Proxy-Thermostat für Tado X TRVs.
 Feedforward + PI-Regelung mit externem Raumsensor.
 
 ## Sprache
@@ -42,7 +43,7 @@ Neue Features immer erst in den HA-freien Modulen (`parameters.py`, `regulation.
 - `binary_sensor.py` – Sensor-Degraded-Diagnose
 - `config_flow.py` – Setup + Options Flow
 - `diagnostics.py` – HA-Diagnostics-Export
-- `card.py` + `www/tadox-room-card.js` – Dashboard-Karte (`custom:tadox-room-card`), per `async_setup` ausgeliefert und als Dashboard-Ressource eingetragen (YAML-Modus: Frontend-Modul); registriert sich erst nach `home-assistant` (Scoped-Registry); liest `boost_duration_min` und `source_entity_id` aus den Climate-Attributen
+- `card.py` + `www/roomstat-card.js` – Dashboard-Karte (`custom:roomstat-card`), per `async_setup` ausgeliefert und als Dashboard-Ressource eingetragen (YAML-Modus: Frontend-Modul); registriert sich erst nach `home-assistant` (Scoped-Registry); liest `boost_duration_min` und `source_entity_id` aus den Climate-Attributen
 - `const.py` – DOMAIN, Config-Keys, Custom Preset Names, `safe_float()`
 - `strings.json` + `translations/` – UI-Texte (EN + DE)
 - `manifest.json` – Version, Metadata
@@ -56,7 +57,7 @@ python -m pytest tests/ -v
 - `tests/plant_sim.py` simuliert Raum + Heizkörper + Tado-TRV (mit eigenem PI) + Proxy im
   geschlossenen Regelkreis; Änderungen an Regelung oder Selbstoptimierung damit prüfen.
 - `tests/ha_harness.py` stellt einen minimalen HA-Stub bereit, damit E2E-Tests den echten
-  `TadoXProxyClimate`-Code ausführen (`test_frost_preset_persistence.py`, `test_summer_mode.py`,
+  `RoomstatClimate`-Code ausführen (`test_frost_preset_persistence.py`, `test_summer_mode.py`,
   `test_schedule.py`).
   Benötigt Python ≥ 3.11 (`asyncio.timeout`), CI nutzt 3.12.
 

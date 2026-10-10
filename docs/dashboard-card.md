@@ -1,12 +1,12 @@
 # Dashboard card
 
-The integration ships a card for each room: `custom:tadox-room-card`. It shows
+The integration ships a card for each room: `custom:roomstat-card`. It shows
 what the room is doing and gives you one-tap mode buttons, with no templates,
 card-mod or extra resources.
 
 It is loaded automatically: when Home Assistant starts, the integration adds
 it to your dashboard resources (Settings → Dashboards → ⋮ → Resources, shown as
-`/tadox_proxy/tadox-room-card.js`). After installing or updating, restart Home
+`/roomstat/roomstat-card.js`). After installing or updating, restart Home
 Assistant and reload the browser tab or app once. If your resources are
 managed in YAML, it is loaded as a frontend module instead.
 
@@ -17,13 +17,13 @@ In a dashboard, choose **Add card → Tado X room**, pick the thermostat, done.
 Or in YAML:
 
 ```yaml
-type: custom:tadox-room-card
+type: custom:roomstat-card
 entity: climate.living_room_thermostat
 ```
 
 | Option | Required | What it does |
 |---|---|---|
-| `entity` | yes | The Tado X Proxy thermostat. |
+| `entity` | yes | The Roomstat thermostat. |
 | `name` | no | Text at the top. Defaults to the room (area) name. |
 | `icon` | no | Room icon. Defaults to the area icon. |
 | `heating_entity` | no | Sensor with the valve's heating %. Found automatically for Tado X; set it only if the % stays empty. |

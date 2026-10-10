@@ -1,4 +1,4 @@
-"""Summer-mode mixin for TadoXProxyClimate.
+"""Summer-mode mixin for RoomstatClimate.
 
 Summer mode is driven by an optional on/off helper (usually an
 ``input_boolean`` shared by every thermostat).  While it is on:
@@ -45,7 +45,7 @@ SUMMER_TARGET_C: float = FROST_PROTECT_C
 
 
 class SummerMixin:
-    """Summer-mode lock extracted from TadoXProxyClimate."""
+    """Summer-mode lock extracted from RoomstatClimate."""
 
     @property
     def summer_mode_active(self) -> bool:

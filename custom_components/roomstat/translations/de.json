@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Tado X Proxy Thermostat",
+        "title": "Roomstat",
         "description": "Ein Eintrag steuert genau ein Tado X Heizkörperthermostat (TRV). Hat ein Raum mehrere Heizkörper, lege pro TRV einen Eintrag an und verweise alle auf denselben Raum-Temperatursensor.",
         "data": {
           "source_entity_id": "Tado X Heizkörperthermostat (TRV)",
@@ -162,7 +162,7 @@
   },
   "entity": {
     "climate": {
-      "tadox_proxy": {
+      "roomstat": {
         "state_attributes": {
           "hvac_action": {
             "state": {

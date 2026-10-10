@@ -1,4 +1,4 @@
-"""Constants for the Tado X Proxy integration."""
+"""Constants for the Roomstat integration."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from homeassistant.components.climate import (
     PRESET_ECO,
 )
 
-DOMAIN = "tadox_proxy"
+DOMAIN = "roomstat"
 
 CONF_SOURCE_ENTITY_ID = "source_entity_id"
 CONF_NAME = "name"
