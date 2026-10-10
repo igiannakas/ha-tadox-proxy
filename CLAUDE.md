@@ -15,6 +15,7 @@ Feedforward + PI-Regelung mit externem Raumsensor.
 ```
 HA-frei (direkt testbar):          HA-Bridge:
 parameters.py → regulation.py      climate.py (Entity, Mixin-Komposition)
+parameters.py → autotune.py
 climate_controllers.py             ├─ climate_regulation.py (RegulationMixin)
                                    ├─ climate_presets.py (PresetMixin)
                                    ├─ climate_schedule.py (ScheduleMixin)
@@ -27,7 +28,8 @@ Neue Features immer erst in den HA-freien Modulen (`parameters.py`, `regulation.
 ### Schlüsseldateien
 
 - `parameters.py` – Defaults (RegulationConfig, PresetConfig, CorrectionTuning, BehaviourConfig)
-- `regulation.py` – Feedforward + PI Engine (HA-unabhängig)
+- `regulation.py` – Feedforward + PI Engine + einseitige D-Bremse (HA-unabhängig)
+- `autotune.py` – Hintergrund-Selbstoptimierung von Kp/Ki/Td (HA-unabhängig), Design: `docs/pi-autotune.md`
 - `climate_controllers.py` – Window/Presence/Follow-Zustandsmaschinen (HA-unabhängig)
 - `climate.py` – HA ClimateEntity: Properties, Lifecycle, Config, Follow-Tado
 - `climate_regulation.py` – RegulationMixin: Regelzyklus, Rate-Limiting, TRV-Kommandos
@@ -35,8 +37,8 @@ Neue Features immer erst in den HA-freien Modulen (`parameters.py`, `regulation.
 - `climate_schedule.py` – ScheduleMixin: Zeitplan folgen (input_select), manuelle Übersteuerung mit Ablauf
 - `climate_summer.py` – SummerMixin: Sommermodus-Sperre (5 °C, Service-Calls abgelehnt, TRV-Durchsetzung)
 - `number.py` – NumberEntity für Preset-Temperaturen
-- `sensor.py` – Boost-Restzeit- und Zeitplan-Übersteuerungs-Sensor
-- `button.py` – „Zeitplan fortsetzen“-Button
+- `sensor.py` – Boost-Restzeit-, Zeitplan-Übersteuerungs- und Tuning-Sensoren (Kp/Ki/Td in Verwendung, Selbstoptimierungs-Status und -Modell)
+- `button.py` – „Zeitplan fortsetzen“- und „Selbstoptimierung zurücksetzen“-Button
 - `binary_sensor.py` – Sensor-Degraded-Diagnose
 - `switch.py` – Toggle-Features (z.B. Follow Tado Input)
 - `config_flow.py` – Setup + Options Flow
@@ -52,6 +54,8 @@ Neue Features immer erst in den HA-freien Modulen (`parameters.py`, `regulation.
 python -m pytest tests/ -v
 ```
 
+- `tests/plant_sim.py` simuliert Raum + Heizkörper + Tado-TRV (mit eigenem PI) + Proxy im
+  geschlossenen Regelkreis; Änderungen an Regelung oder Selbstoptimierung damit prüfen.
 - `tests/ha_harness.py` stellt einen minimalen HA-Stub bereit, damit E2E-Tests den echten
   `TadoXProxyClimate`-Code ausführen (`test_frost_preset_persistence.py`, `test_summer_mode.py`,
   `test_schedule.py`).

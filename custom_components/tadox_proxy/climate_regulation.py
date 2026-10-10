@@ -6,8 +6,10 @@ import asyncio
 import logging
 import time
 
-from homeassistant.components.climate import HVACMode
+from homeassistant.components.climate import PRESET_BOOST, HVACMode
 from homeassistant.exceptions import HomeAssistantError
+
+from .autotune import AutotuneSample
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,6 +27,49 @@ class RegulationMixin:
             se = getattr(self.coordinator, attr, None)
             if se is not None and se.hass is not None:
                 se.async_write_ha_state()
+        for ent in getattr(self.coordinator, "tuning_entities", ()):
+            if ent.hass is not None:
+                ent.async_write_ha_state()
+
+    def _autotune_eligible(self) -> bool:
+        """Whether this cycle is normal heating the auto-tuner may learn from.
+
+        Window / presence automations, boost, summer mode and a stale sensor
+        all produce behaviour that says nothing about the room's dynamics.
+        """
+        return (
+            self._hvac_mode == HVACMode.HEAT
+            and not self._summer_active
+            and not self._window_ctrl.is_active
+            and not self._window_ctrl.close_delay_active
+            and not self._presence_ctrl.is_active
+            and self._preset_mode != PRESET_BOOST
+            and not self._sensor_degraded
+        )
+
+    def _feed_autotune(self, now, setpoint, room_temp, tado_internal, result) -> None:
+        """Hand one cycle to the auto-tuner; apply any change it makes."""
+        if not self._autotune_enabled:
+            return
+        tado_sp = (
+            self._last_sent_setpoint
+            if self._last_sent_setpoint is not None
+            else self.coordinator.data.get("tado_setpoint")
+        )
+        reason = self._autotuner.observe(
+            AutotuneSample(
+                ts=now,
+                setpoint_c=setpoint,
+                room_temp_c=None if self._sensor_degraded else room_temp,
+                tado_internal_c=tado_internal,
+                tado_setpoint_c=tado_sp,
+                eligible=self._autotune_eligible(),
+                command_saturated=result.is_saturated,
+            )
+        )
+        if reason:
+            _LOGGER.info("%s: auto-tune %s", self._config_entry.title, reason)
+            self._apply_active_tuning()
 
     async def _async_regulation_cycle_timer(self, _now) -> None:
         """Periodic timer callback."""
@@ -103,6 +148,13 @@ class RegulationMixin:
         # 3. Effective setpoint (considers HVAC mode + preset)
         setpoint = self._effective_setpoint()
 
+        # 3b. Robust room slope for the derivative brake (only on fresh
+        # readings; a bridged/stale value must not look like a flat room).
+        slope = None
+        if not self._sensor_degraded:
+            self._slope.add(now, room_temp)
+            slope = self._slope.slope_c_per_s()
+
         # 4. Compute regulation
         result = self._regulator.compute(
             setpoint_c=setpoint,
@@ -110,6 +162,7 @@ class RegulationMixin:
             tado_internal_c=tado_internal,
             time_delta_s=dt,
             state=self._reg_state,
+            room_slope_c_per_s=slope,
         )
         self._reg_state = result.new_state
         self._last_result = result
@@ -182,6 +235,11 @@ class RegulationMixin:
             self._last_reason = f"sent({reason})"
         else:
             self._last_reason = reason
+
+        # 7. Background auto-tune (no-op when disabled).  Runs after the
+        # send so it sees the command the TRV now holds; any new values take
+        # effect from the next cycle.
+        self._feed_autotune(now, setpoint, room_temp, tado_internal, result)
 
         self._write_state_with_binary_sensor()
 

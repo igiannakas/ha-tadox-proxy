@@ -86,12 +86,26 @@
             "data": {
               "correction_kp": "Proportional correction (Kp)",
               "correction_ki": "Integral correction (Ki)",
-              "integral_deadband_c": "Integral precision zone"
+              "integral_deadband_c": "Integral precision zone",
+              "derivative_time_min": "Heat-up braking time (derivative)"
             },
             "data_description": {
               "correction_kp": "Proportional gain of the PI controller. Higher values react faster to temperature deviations.",
               "correction_ki": "Integral gain of the PI controller. Higher values correct persistent offsets more aggressively.",
-              "integral_deadband_c": "Integral only accumulates when the error is within this zone. Prevents overshoot during large transients."
+              "integral_deadband_c": "Integral only accumulates when the error is within this zone. Prevents overshoot during large transients.",
+              "derivative_time_min": "0 = off. Lowers the command while the room is warming, so the radiator stops before the room reaches the target instead of after it. It can only ever reduce heating. Typical 15–35 min. When auto-tune learns braking, this is only its starting value."
+            }
+          },
+          "autotune": {
+            "name": "Auto-tune",
+            "description": "Learns Kp, Ki and the braking time for this room in the background, from everyday heat-ups. The values above are the starting point; learned values stay within safe limits around them.",
+            "data": {
+              "autotune_enabled": "Enable auto-tune",
+              "autotune_derivative": "Learn heat-up braking"
+            },
+            "data_description": {
+              "autotune_enabled": "Adjusts the controller a little at a time and undoes any change that makes things worse. Changing Kp, Ki or the braking time above restarts learning.",
+              "autotune_derivative": "Also learn how early to stop heating before the target, from how long the radiator keeps heating after Tado is told to stop. Recommended."
             }
           },
           "gain_scheduling": {
@@ -198,11 +212,44 @@
       },
       "schedule_override_remaining": {
         "name": "Schedule override remaining"
+      },
+      "pi_kp": {
+        "name": "Kp in use"
+      },
+      "pi_ki": {
+        "name": "Ki in use"
+      },
+      "pi_td": {
+        "name": "Braking time in use"
+      },
+      "autotune_status": {
+        "name": "Auto-tune status",
+        "state": {
+          "disabled": "Disabled",
+          "learning": "Learning",
+          "tuning": "Tuning",
+          "frozen": "Frozen"
+        }
+      },
+      "autotune_dead_time": {
+        "name": "Room dead time"
+      },
+      "autotune_coast_time": {
+        "name": "Radiator coast time"
+      },
+      "autotune_heating_rate": {
+        "name": "Heat-up rate"
+      },
+      "autotune_last_overshoot": {
+        "name": "Last heat-up overshoot"
       }
     },
     "button": {
       "resume_schedule": {
         "name": "Resume schedule"
+      },
+      "reset_autotune": {
+        "name": "Reset auto-tune"
       }
     },
     "binary_sensor": {

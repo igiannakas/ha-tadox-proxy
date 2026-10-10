@@ -29,7 +29,7 @@ did what.
 
 | What you observe | Usual cause | Go to |
 |---|---|---|
-| Room sails past the target, then drifts back down | Correction too strong | [Strong overshoot](#strong-overshoot--1c) |
+| Room sails past the target, then drifts back down | The Tado keeps heating after it is told to stop | [Strong overshoot](#strong-overshoot--1c) |
 | Temperature cycles up and down repeatedly | Correction too strong, or commands too frequent | [Oscillation](#temperature-oscillates-strongly) |
 | Room settles slightly below target and stays there | Long-term correction too weak | [Ki](#ki-integral-correction) |
 | Room takes very long to warm from cold | Cold-start boost too low — or the radiator is simply undersized | [Kp](#kp-proportional-correction) and the [radiator table](#tuning-by-radiator-type) |
@@ -37,6 +37,12 @@ did what.
 
 If you want to understand *why* a value has the effect it does, see
 [how it works](docs/how-it-works.md).
+
+**Rather not tune by hand?** Switch on
+[auto-tune](docs/settings.md#auto-tune) (Options → Auto-tune). It measures
+your room during normal heat-ups and makes these adjustments itself, a step at
+a time. Overshoot is the main thing it fixes. The values you have set become
+its starting point.
 
 ---
 
@@ -171,6 +177,7 @@ These parameters can be adjusted in the options flow under "PI Controller":
 | `correction_kp` | 0.8 | 0.0–5.0 | Proportional gain of the PI controller |
 | `correction_ki` | 0.003 | 0.0–0.1 | Integral gain of the PI controller |
 | `integral_deadband_c` | 0.3°C | 0.1–1.0°C | Integral only accumulates when error is within this zone |
+| `derivative_time_min` | 0 min | 0–45 min | Heat-up braking time. 0 = off. Lowers the command while the room is rising; never raises it |
 
 ### Configurable Parameters (Options → Gain Scheduling)
 
@@ -275,10 +282,20 @@ regulation_reason: rate_limited(95s)
 
 ### Strong Overshoot (> 1°C)
 
-1. Reduce Kp (e.g., from 0.8 to 0.5).
-2. If gain scheduling is enabled, reduce the near-target strength (e.g., 0.7).
-3. Check `i_correction_c`: If > 1.0 during heat-up → possible issue, please report as an issue.
-4. Reduce `integral_deadband_c` (Options → PI Controller) to tighten the precision zone.
+Usually not a Kp problem. After the integration tells the Tado to stop, the
+Tado's own controller keeps the valve open for a while and the radiator is
+still hot. Measured on real rooms, this "coast" lasts 30–60 minutes. Lowering
+Kp hardly changes it: in simulation, Kp 0.6 → 0.1 moved overshoot only from
+0.59 to 0.56 °C, and made the heat-up slower.
+
+1. Set **Heat-up braking time** (Options → PI Controller) to 20 min, or switch on
+   [auto-tune](docs/settings.md#auto-tune) to have it learned. Watch
+   `d_correction_c` go negative during the last part of a heat-up.
+2. Still overshooting after two or three heat-ups? Raise the braking time in
+   5-minute steps, up to about 35 min.
+3. Lower Ki (e.g. 0.003 → 0.001). A fast integral adds to the coast.
+4. Only then reduce Kp (e.g. from 0.8 to 0.5).
+5. Check `i_correction_c`: If > 1.0 during heat-up → possible issue, please report as an issue.
 
 ### Temperature Oscillates Strongly
 

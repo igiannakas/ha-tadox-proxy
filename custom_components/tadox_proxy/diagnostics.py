@@ -13,6 +13,7 @@ from .const import (
     CONF_SCHEDULE_ENTITY_ID,
     CONF_SOURCE_ENTITY_ID,
     CONF_SUMMER_MODE_ENTITY_ID,
+    DOMAIN,
 )
 
 TO_REDACT: list[str] = []
@@ -80,4 +81,17 @@ async def async_get_config_entry_diagnostics(
         },
         "proxy_entities": proxy_entities,
         "states": {eid: _state_snapshot(hass, eid) for eid in selected_entities},
+        "autotune": _autotune_snapshot(hass, config_entry),
+    }
+
+
+def _autotune_snapshot(hass: HomeAssistant, config_entry: ConfigEntry) -> dict[str, Any] | None:
+    """Auto-tune summary plus the full learned state (episodes, trims, votes)."""
+    coordinator = hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
+    climate = getattr(coordinator, "climate_entity", None)
+    if climate is None:
+        return None
+    return {
+        "summary": climate.autotune_summary(),
+        "state": climate._autotuner.as_dict(),
     }

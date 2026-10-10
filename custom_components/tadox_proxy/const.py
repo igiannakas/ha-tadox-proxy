@@ -66,6 +66,13 @@ CONF_OVERLAY_REFRESH_S = "overlay_refresh_s"
 # PI controller tuning keys (stored in options)
 CONF_CORRECTION_KP = "correction_kp"
 CONF_CORRECTION_KI = "correction_ki"
+# Derivative brake time in minutes (0 = off).  See regulation.py.
+CONF_DERIVATIVE_TIME_MIN = "derivative_time_min"
+
+# Background auto-tune (see autotune.py)
+CONF_AUTOTUNE_ENABLED = "autotune_enabled"
+# Let the auto-tuner learn the derivative brake time as well.
+CONF_AUTOTUNE_DERIVATIVE = "autotune_derivative"
 
 # Adaptive gain scheduling
 CONF_GAIN_SCHEDULING = "gain_scheduling_enabled"

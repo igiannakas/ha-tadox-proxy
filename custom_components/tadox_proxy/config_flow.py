@@ -8,9 +8,12 @@ from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_AUTOTUNE_DERIVATIVE,
+    CONF_AUTOTUNE_ENABLED,
     CONF_BOOST_DURATION,
     CONF_CORRECTION_KI,
     CONF_CORRECTION_KP,
+    CONF_DERIVATIVE_TIME_MIN,
     CONF_EXTERNAL_TEMPERATURE_ENTITY_ID,
     CONF_FOLLOW_GRACE_S,
     CONF_FOLLOW_THRESHOLD_C,
@@ -309,6 +312,33 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
                                     unit_of_measurement="°C",
                                 )
                             ),
+                            vol.Required(
+                                CONF_DERIVATIVE_TIME_MIN,
+                                default=opts.get(CONF_DERIVATIVE_TIME_MIN, 0),
+                            ): selector.NumberSelector(
+                                selector.NumberSelectorConfig(
+                                    min=0, max=45, step=1,
+                                    mode=selector.NumberSelectorMode.BOX,
+                                    unit_of_measurement="min",
+                                )
+                            ),
+                        }
+                    ),
+                    {"collapsed": True},
+                ),
+
+                # Section: Auto-tune
+                vol.Required("autotune"): section(
+                    vol.Schema(
+                        {
+                            vol.Required(
+                                CONF_AUTOTUNE_ENABLED,
+                                default=opts.get(CONF_AUTOTUNE_ENABLED, False),
+                            ): selector.BooleanSelector(),
+                            vol.Required(
+                                CONF_AUTOTUNE_DERIVATIVE,
+                                default=opts.get(CONF_AUTOTUNE_DERIVATIVE, True),
+                            ): selector.BooleanSelector(),
                         }
                     ),
                     {"collapsed": True},

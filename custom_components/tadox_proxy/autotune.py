@@ -482,9 +482,11 @@ class _HoldTracker:
 # The tuner
 # ---------------------------------------------------------------------------
 
+STATUS_DISABLED = "disabled"   # reported by the integration when switched off
 STATUS_LEARNING = "learning"
 STATUS_TUNING = "tuning"
 STATUS_FROZEN = "frozen"
+STATUSES = [STATUS_DISABLED, STATUS_LEARNING, STATUS_TUNING, STATUS_FROZEN]
 
 PHASE_IDLE = "idle"
 PHASE_HEATUP = "heat_up"
@@ -585,6 +587,11 @@ class Autotuner:
     @property
     def baseline(self) -> Tuning:
         return self._baseline
+
+    def restore(self, stored: Any) -> None:
+        """Load state persisted by :meth:`as_dict` (e.g. after a restart)."""
+        if stored is not None:
+            self._load(stored)
 
     def active_tuning(self) -> Tuning:
         """The values the regulator should use right now."""

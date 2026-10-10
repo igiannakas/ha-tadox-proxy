@@ -33,6 +33,31 @@ Automatische Kp-Skalierung abhängig vom Betriebszustand:
 - Interpolation über den vollen Bereich zwischen den Zonenschwellen.
 - Schwellen (cold-start/near-target) sind im Options-Flow konfigurierbar.
 
+## Schleifenverstärkung ist (1 + Kp)
+
+Der Feedforward kürzt Tados eigene Messung heraus. Tados interner Regler sieht
+`(1 + Kp)·Fehler + Integral + Bremse`. Kp = 0 heißt also nicht „kein P-Anteil".
+
+## D-Bremse (einseitig, Standard: aus)
+
+Tados interner Regler heizt nach negativer Anforderung noch 30–60 min weiter
+(eigener Integrator, heißer Heizkörper). Mit P+I kreuzt die Anforderung erst bei
+Fehler 0 die Null – immer zu spät. Die Bremse `-(1+Kp)·Td·max(0, Steigung)`
+verschiebt den Nulldurchgang um Td·Steigung nach vorn.
+- **Nur senkend**, nur bei steigender Raumtemperatur, auf −2 °C begrenzt.
+- Steigung per Theil-Sen (robust gegen einzelne Sensor-Ausreißer).
+- Aus bei degradiertem Sensor.
+**Nicht beidseitig machen** – ein fallender Messwert (Fenster, Ausreißer) darf nie Heizen auslösen.
+
+## Selbstoptimierung (autotune.py)
+
+Siehe `docs/pi-autotune.md`. Kernpunkte:
+- SIMC nur für Ti (= 4(τc+θ), τc = 1,5θ) und als Begründung für Td = Nachheizzeit.
+- **Kein SIMC-Kc**: Die Verstärkungsschätzung Rate/Anforderung ist selbstbezüglich
+  (Anforderung ∝ Kc) und hat Kp in der Simulation bis zur Untergrenze gedrückt.
+- Gelerntes nur in Restore-State-Daten, nie in Options (würde Reload auslösen).
+- Grenzen, Schrittweiten, Raten, Rollback: `AutotuneConfig` in `parameters.py`.
+
 ## Rate Limiting (180s)
 
 Batterieschonung für Tado X TRVs. Die TRVs kommunizieren per Funk und jeder Befehl kostet Batterie.

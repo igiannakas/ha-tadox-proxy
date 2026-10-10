@@ -211,6 +211,45 @@ behaviour jumps at a threshold produces visible kinks in the temperature curve.
 All four values are adjustable, and the whole feature can be switched off if you have
 already tuned `Kp` to your liking.
 
+### Braking before the target
+
+There is a third problem, found by looking at real rooms. When the integration
+tells the Tado to stop, it does not stop at once. Its own controller has its own
+memory, and the radiator is full of hot water. Heat keeps arriving for another
+30–60 minutes.
+
+With the three parts above, the Tado is told to stop only when the room has
+*reached* the target. That is always too late. Everything still on its way
+lands as overshoot, and turning Kp down barely helps.
+
+The fix is to look ahead. While the room is warming, the integration subtracts
+
+```
+braking = (1 + Kp) × braking_time × warming_rate
+```
+
+so the Tado is told to stop a little *before* the target, by about the amount
+the coast will add. This is a *derivative* term (it acts on how fast the
+temperature changes), with three deliberate restrictions:
+
+- It only ever **lowers** the target and only acts while the room is rising. A
+  falling reading — an open door, a sensor glitch — can never make it heat.
+- It is capped at 2 °C.
+- The warming rate is the *median* of the slopes between recent readings, so a
+  single wild reading does not move it.
+
+It is off by default. [Auto-tune](pi-autotune.md) can learn the right braking
+time for each room by measuring the coast directly.
+
+### Auto-tune
+
+Optionally, the integration learns Kp, Ki and the braking time per room from
+normal use. It never injects test signals. It measures the room's response
+delay, warming rate and coast from ordinary heat-ups, and moves the values in
+small, bounded, checked steps. The reasoning, including where standard tuning
+rules (SIMC) apply and where they do not, is in
+[Auto-tune: design and rationale](pi-autotune.md).
+
 ---
 
 ## Why it waits three minutes
@@ -318,7 +357,8 @@ Assistant dependencies so it can be read and tested on its own:
 
 | File | Contains |
 |---|---|
-| `custom_components/tadox_proxy/regulation.py` | The entire control loop, ~200 lines |
+| `custom_components/tadox_proxy/regulation.py` | The entire control loop, ~250 lines |
+| `custom_components/tadox_proxy/autotune.py` | The background auto-tuner |
 | `custom_components/tadox_proxy/parameters.py` | Every default value, with rationale |
 | `custom_components/tadox_proxy/climate_controllers.py` | Window, presence and follow state machines |
 | `tests/` | Test suite, runnable without Home Assistant |
