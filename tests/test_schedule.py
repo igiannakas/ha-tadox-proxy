@@ -306,7 +306,9 @@ class TestOverrideUntilNextChange:
         _schedule(ent, "comfort")
         assert ent.preset_mode == "comfort"
 
-    def test_follow_physical_dial_is_an_override(self):
+    def test_physical_dial_change_is_ignored(self):
+        # The "follow physical thermostat" feature was removed: a dial change
+        # on the TRV is never adopted, even with the old option still stored.
         ent = _entity("night")
         ent._config_entry.options["follow_tado_input"] = True
         ent._last_sent_setpoint = 16.0
@@ -317,8 +319,8 @@ class TestOverrideUntilNextChange:
             type("E", (), {"data": {"old_state": old, "new_state": new}})()
         )
         drain_tasks(ent)
-        assert ent.preset_mode == "none"
-        assert ent.extra_state_attributes["schedule_override_active"] is True
+        assert ent.preset_mode == "eco"
+        assert ent.extra_state_attributes["schedule_override_active"] is False
 
 
 @e2e

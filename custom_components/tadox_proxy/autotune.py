@@ -1225,6 +1225,7 @@ class Autotuner:
             "pending": self._pending,
             "counters": dict(self._counters),
             "last_update_reason": self.last_update_reason,
+            "last_event": self.last_event,
         }
 
     def _load(self, d: Any) -> None:
@@ -1267,7 +1268,15 @@ class Autotuner:
                     self._counters[k] = v
             if isinstance(d.get("last_update_reason"), str):
                 self.last_update_reason = d["last_update_reason"][:200]
-            self.last_event = "restored learned values"
+            # Keep the last real event across restarts.  An episode in progress
+            # is not persisted, so "heat-up started" would be stale.
+            ev = d.get("last_event")
+            if isinstance(ev, str) and ev and ev != "heat-up started":
+                self.last_event = ev[:200]
+            elif self._counters["heatups"] or self._counters["holds"]:
+                self.last_event = "restored learned values"
+            else:
+                self.last_event = "waiting for a heat-up"
         except (TypeError, ValueError, KeyError, AttributeError, IndexError):
             _LOGGER.warning("Auto-tune: stored state unreadable, starting fresh")
             self._reset_learning()

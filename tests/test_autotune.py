@@ -726,6 +726,20 @@ class TestPersistence:
         t2 = _tuner(kp=0.8, stored=t.as_dict())
         assert t2.active_tuning() == A.Tuning(0.8, 0.002, 0.0)
 
+    def test_last_event_survives_restart(self):
+        t = _tuner()
+        t._on_heatup(_heatup(DAY, 0.6), DAY)
+        assert _tuner(stored=t.as_dict()).last_event == t.last_event
+
+    def test_nothing_learned_still_waiting_after_restart(self):
+        # Older stored state has no last_event; nothing learned yet.
+        d = _tuner().as_dict()
+        del d["last_event"]
+        assert _tuner(stored=d).last_event == "waiting for a heat-up"
+        # An episode in progress is not persisted, so its event is stale.
+        d["last_event"] = "heat-up started"
+        assert _tuner(stored=d).last_event == "waiting for a heat-up"
+
 
 # ---------------------------------------------------------------------------
 # 3. Closed loop

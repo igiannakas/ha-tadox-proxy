@@ -176,8 +176,6 @@ optional and you can ignore them until you need them.
   in automations.
 - **A boost timer sensor** showing how many minutes of boost are left.
 - **A warning sensor** that turns on if your room sensor stops reporting.
-- **A "follow physical thermostat" switch**, off by default. Turn it on if you want
-  turning the dial on the radiator thermostat to override the proxy.
 
 The [settings reference](settings.md) explains each one.
 

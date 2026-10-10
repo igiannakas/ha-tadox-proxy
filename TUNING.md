@@ -213,8 +213,6 @@ These parameters can be adjusted in the options flow under "Behaviour":
 | Parameter | Default | Range | Meaning |
 |-----------|---------|-------|---------|
 | `sensor_grace_s` | 300s | 0–1800s | How long to use last valid reading when sensor is unavailable |
-| `follow_threshold_c` | 0.5°C | 0.1–2.0°C | Min divergence to detect physical user input on Tado |
-| `follow_grace_s` | 20s | 5–120s | Ignore Tado changes for this long after sending a command |
 | `urgent_decrease_threshold_c` | 1.0°C | 0.5–3.0°C | Bypass rate limiting for large decreases |
 
 ### Internal Parameters (Not Adjustable)

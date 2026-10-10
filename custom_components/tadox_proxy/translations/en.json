@@ -142,17 +142,13 @@
           },
           "behaviour": {
             "name": "Behaviour",
-            "description": "Sensor resilience and follow-tado thresholds.",
+            "description": "Sensor resilience and urgent cool-down threshold.",
             "data": {
               "sensor_grace_s": "Sensor grace period",
-              "follow_threshold_c": "Follow-tado threshold",
-              "follow_grace_s": "Follow-tado grace period",
               "urgent_decrease_threshold_c": "Urgent decrease threshold"
             },
             "data_description": {
               "sensor_grace_s": "How long to use the last valid reading when the external sensor becomes unavailable.",
-              "follow_threshold_c": "Minimum difference from last-sent setpoint to treat a Tado change as physical user input.",
-              "follow_grace_s": "Grace period after a command during which Tado setpoint changes are ignored (acknowledgement delay).",
               "urgent_decrease_threshold_c": "Bypass rate limiting when the new target is this much below the current Tado setpoint."
             }
           }
@@ -254,11 +250,6 @@
     "binary_sensor": {
       "sensor_degraded": {
         "name": "Sensor degraded"
-      }
-    },
-    "switch": {
-      "follow_tado_input": {
-        "name": "Follow physical thermostat"
       }
     }
   },

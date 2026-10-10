@@ -46,7 +46,6 @@ from .autotune import (
 from .climate_controllers import (
     STARTUP_ARM_OPEN,
     STARTUP_RESTORE,
-    FollowPhysicalController,
     PersistedAutomationState,
     PresenceAutomationController,
     SavedState,
@@ -71,9 +70,6 @@ from .const import (
     CONF_CORRECTION_KP,
     CONF_DERIVATIVE_TIME_MIN,
     CONF_ECO_TARGET,
-    CONF_FOLLOW_GRACE_S,
-    CONF_FOLLOW_TADO_INPUT,
-    CONF_FOLLOW_THRESHOLD_C,
     CONF_FROST_PROTECTION_TARGET,
     CONF_GAIN_FINE_MULTIPLIER,
     CONF_GAIN_FINE_THRESHOLD_C,
@@ -388,8 +384,6 @@ class TadoXProxyClimate(
         if not opts:
             return defaults
         return BehaviourConfig(
-            follow_threshold_c=opts.get(CONF_FOLLOW_THRESHOLD_C, defaults.follow_threshold_c),
-            follow_grace_s=opts.get(CONF_FOLLOW_GRACE_S, defaults.follow_grace_s),
             urgent_decrease_threshold_c=opts.get(
                 CONF_URGENT_DECREASE_THRESHOLD_C, defaults.urgent_decrease_threshold_c
             ),
@@ -487,18 +481,13 @@ class TadoXProxyClimate(
             persisted.summer_active if persisted is not None else False
         )
 
-        # Initialize baseline for follow-tado from current tado setpoint so
-        # the feature works immediately without waiting for the first regulation.
-        tado_sp = self.coordinator.data.get("tado_setpoint")
-        if tado_sp is not None and self._last_sent_setpoint is None:
-            self._last_sent_setpoint = tado_sp
-
-        # Config entry update listener (from number/switch entities)
+        # Config entry update listener (from number entities)
         self.async_on_remove(
             self._config_entry.add_update_listener(self._async_config_entry_updated)
         )
 
-        # State change listener on source Tado entity (follow physical thermostat)
+        # State change listener on the source TRV (summer mode pushes a dial
+        # change back to 5 °C straight away)
         source_entity = self._config_entry.data.get("source_entity_id")
         if source_entity:
             self.async_on_remove(
@@ -717,79 +706,31 @@ class TadoXProxyClimate(
         self.async_write_ha_state()
 
     # ------------------------------------------------------------------
-    # Follow physical thermostat
+    # Source TRV changes
     # ------------------------------------------------------------------
 
     @callback
     def _async_tado_state_changed(self, event) -> None:
-        """Detect physical thermostat changes and follow them if enabled."""
-        if self._summer_active:
-            # Summer mode: never follow – push the TRV back to 5 °C instead
-            # (the regulation cycle honours the command rate limit).
-            new_state = event.data.get("new_state")
-            old_state = event.data.get("old_state")
-            if new_state is not None and (
-                old_state is None
-                or new_state.state != old_state.state
-                or new_state.attributes.get("temperature")
-                != old_state.attributes.get("temperature")
-            ):
-                self.hass.async_create_task(
-                    self._async_regulation_cycle(trigger="summer_trv_changed")
-                )
-            return
+        """React to a change on the source TRV.
 
-        if not self._config_entry.options.get(CONF_FOLLOW_TADO_INPUT, False):
+        Only summer mode cares: a dial change is pushed back to 5 °C straight
+        away (the regulation cycle honours the command rate limit).  Outside
+        summer mode a dial change is never adopted as a new target; the
+        proxy's next command overwrites it.
+        """
+        if not self._summer_active:
             return
-
         new_state = event.data.get("new_state")
         old_state = event.data.get("old_state")
-        if new_state is None or new_state.state in ("unavailable", "unknown"):
-            return
-
-        new_temp_attr = new_state.attributes.get("temperature")
-        old_temp_attr = old_state.attributes.get("temperature") if old_state else None
-        if new_temp_attr is None or new_temp_attr == old_temp_attr:
-            return
-
-        tado_setpoint = safe_float(new_temp_attr)
-        if tado_setpoint is None:
-            return
-
-        if not FollowPhysicalController.should_follow(
-            tado_setpoint=tado_setpoint,
-            last_sent=self._last_sent_setpoint,
-            last_sent_ts=self._last_command_sent_ts,
-            threshold_c=self._behaviour.follow_threshold_c,
-            grace_s=self._behaviour.follow_grace_s,
+        if new_state is not None and (
+            old_state is None
+            or new_state.state != old_state.state
+            or new_state.attributes.get("temperature")
+            != old_state.attributes.get("temperature")
         ):
-            return
-
-        # Don't override window frost protection or presence-away automation.
-        if self._window_ctrl.is_active:
-            _LOGGER.info("Follow-tado ignored: window automation active (frost protection)")
-            return
-        if self._presence_ctrl.is_active:
-            _LOGGER.info("Follow-tado ignored: presence automation active (away)")
-            return
-
-        _LOGGER.info(
-            "Physical Tado change detected: %.1f°C → following (last sent: %.1f°C)",
-            tado_setpoint,
-            self._last_sent_setpoint,
-        )
-        self._target_temp = tado_setpoint
-        self._preset_mode = PRESET_NONE
-        self._schedule_note_manual_temperature()
-        if self._boost_cancel is not None:
-            self._boost_cancel()
-            self._boost_cancel = None
-            self._boost_end_ts = 0.0
-        self.async_write_ha_state()
-        # Trigger immediate regulation so the new target takes effect fast.
-        self.hass.async_create_task(
-            self._async_regulation_cycle(trigger="follow_tado")
-        )
+            self.hass.async_create_task(
+                self._async_regulation_cycle(trigger="summer_trv_changed")
+            )
 
     # ------------------------------------------------------------------
     # Standard climate controls

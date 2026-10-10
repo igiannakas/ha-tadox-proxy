@@ -2,7 +2,7 @@
 
 While the helper is on nothing may change the thermostat: presets,
 temperature and HVAC mode changes are refused (with an error, and the card is
-snapped back), window / presence / follow-Tado are ignored, and a change made
+snapped back), window / presence are ignored, and a change made
 on the TRV itself is pushed back to 5 °C.  Turning the helper off returns the
 thermostat to COMFORT.
 """
@@ -265,9 +265,8 @@ class TestSummerLock:
         assert not ent._presence_ctrl.is_active
         self._assert_unchanged(ent)
 
-    def test_follow_tado_never_follows(self):
+    def test_trv_dial_change_keeps_lock(self):
         ent = self._locked()
-        ent._config_entry.options["follow_tado_input"] = True
         ent._last_command_sent_ts = 0.0
         old = _State("heat", {"temperature": 5.0})
         new = _State("heat", {"temperature": 22.0})

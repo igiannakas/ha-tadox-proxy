@@ -8,8 +8,7 @@ Priority, highest first: summer mode → open window → presence away →
 manual override → schedule.  While a window or presence automation is active,
 schedule changes update the preset they will restore.
 
-A manual change (preset, temperature, boost, physical dial when "follow
-physical thermostat" is on) starts an *override*.  It ends at the next change
+A manual change (preset, temperature, boost) starts an *override*.  It ends at the next change
 of the schedule preset, or after the configured override duration –
 whichever comes first.  Duration 0 means "until the schedule changes".
 Selecting Away or Off (frost protection) by hand is sticky: it stays until

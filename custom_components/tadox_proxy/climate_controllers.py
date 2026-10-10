@@ -8,7 +8,6 @@ Architecture
 ------------
 - ``WindowAutomationController``  – window-open/close delays & state
 - ``PresenceAutomationController`` – presence-away delay & state
-- ``FollowPhysicalController``    – pure-logic helper (no state, static method)
 - ``SavedState``                  – lightweight snapshot dataclass
 - ``PersistedAutomationState``    – automation snapshot that survives an HA
   restart or config-entry reload (stored via RestoreEntity extra data)
@@ -19,12 +18,12 @@ Architecture
 - ``ScheduleController`` / ``parse_schedule_preset`` – follow an external
   schedule helper, with manual overrides that end at the next schedule change
   or after a configurable time (whichever comes first)
+- ``strip_removed_options`` – config entry migration for removed features
 """
 from __future__ import annotations
 
 import logging
 import math
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -342,45 +341,6 @@ class PresenceAutomationController:
         if self._home_timer is not None:
             self._home_timer()
             self._home_timer = None
-
-
-# ---------------------------------------------------------------------------
-# Follow-physical helper (pure logic, no state)
-# ---------------------------------------------------------------------------
-
-class FollowPhysicalController:
-    """Pure-logic helper for detecting physical Tado setpoint changes.
-
-    Contains no mutable state – all inputs are passed per call, making it
-    trivially testable without any mocking.
-    """
-
-    @staticmethod
-    def should_follow(
-        tado_setpoint: float,
-        last_sent: float | None,
-        last_sent_ts: float,
-        threshold_c: float,
-        grace_s: float,
-        now: float | None = None,
-    ) -> bool:
-        """Return ``True`` if the Tado change looks like physical user input.
-
-        Returns ``False`` when:
-
-        - ``last_sent`` is ``None`` (no baseline yet).
-        - The new setpoint is within ``threshold_c`` of our last command.
-        - We are within ``grace_s`` of our last command (Tado still
-          acknowledging via Thread/cloud).
-        """
-        if last_sent is None:
-            return False
-        if abs(tado_setpoint - last_sent) <= threshold_c:
-            return False
-        _now = now if now is not None else time.time()
-        if _now - last_sent_ts < grace_s:
-            return False
-        return True
 
 
 # ---------------------------------------------------------------------------
@@ -764,6 +724,33 @@ class ScheduleController:
             persisted.schedule_override_until if self.override_active else None
         )
         self.override_sticky = self.override_active and persisted.schedule_override_sticky
+
+
+# ---------------------------------------------------------------------------
+# Config entry migration (removed features)
+# ---------------------------------------------------------------------------
+
+# Minor version of the config entry.  1 -> 2: the "follow physical
+# thermostat" feature was removed (its switch and its two thresholds).
+CONFIG_ENTRY_MINOR_VERSION = 2
+
+# Options left behind by removed features.
+REMOVED_OPTION_KEYS: tuple[str, ...] = (
+    "follow_tado_input",
+    "follow_threshold_c",
+    "follow_grace_s",
+)
+
+# Entities of removed features: (entity domain, unique-id suffix after the
+# config entry id).
+REMOVED_ENTITIES: tuple[tuple[str, str], ...] = (
+    ("switch", "_follow_tado_input"),
+)
+
+
+def strip_removed_options(options: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the options without the keys of removed features."""
+    return {k: v for k, v in options.items() if k not in REMOVED_OPTION_KEYS}
 
 
 # ---------------------------------------------------------------------------

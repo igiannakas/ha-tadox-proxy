@@ -7,6 +7,7 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 
+from .climate_controllers import CONFIG_ENTRY_MINOR_VERSION
 from .const import (
     CONF_AUTOTUNE_DERIVATIVE,
     CONF_AUTOTUNE_ENABLED,
@@ -15,8 +16,6 @@ from .const import (
     CONF_CORRECTION_KP,
     CONF_DERIVATIVE_TIME_MIN,
     CONF_EXTERNAL_TEMPERATURE_ENTITY_ID,
-    CONF_FOLLOW_GRACE_S,
-    CONF_FOLLOW_THRESHOLD_C,
     CONF_GAIN_FINE_MULTIPLIER,
     CONF_GAIN_FINE_THRESHOLD_C,
     CONF_GAIN_SCHEDULING,
@@ -48,6 +47,7 @@ class TadoxProxyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """UI setup for the integration (initial setup)."""
 
     VERSION = 1
+    MINOR_VERSION = CONFIG_ENTRY_MINOR_VERSION
 
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
@@ -109,7 +109,7 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
             # Strip empty optional sensor values so they're stored as absent
             cleaned = {k: v for k, v in flat.items() if v not in (None, "")}
             # Preserve existing options not shown in this form (e.g. preset
-            # temperatures set via Number entities, follow_tado_input flag).
+            # temperatures set via Number entities).
             merged = dict(self.config_entry.options)
             # Remove optional sensor keys that were cleared by the user
             for key in (
@@ -444,26 +444,6 @@ class TadoxProxyOptionsFlow(config_entries.OptionsFlow):
                             ): selector.NumberSelector(
                                 selector.NumberSelectorConfig(
                                     min=0, max=1800, step=30,
-                                    mode=selector.NumberSelectorMode.BOX,
-                                    unit_of_measurement="s",
-                                )
-                            ),
-                            vol.Required(
-                                CONF_FOLLOW_THRESHOLD_C,
-                                default=opts.get(CONF_FOLLOW_THRESHOLD_C, beh_defaults.follow_threshold_c),
-                            ): selector.NumberSelector(
-                                selector.NumberSelectorConfig(
-                                    min=0.1, max=2.0, step=0.1,
-                                    mode=selector.NumberSelectorMode.BOX,
-                                    unit_of_measurement="°C",
-                                )
-                            ),
-                            vol.Required(
-                                CONF_FOLLOW_GRACE_S,
-                                default=opts.get(CONF_FOLLOW_GRACE_S, beh_defaults.follow_grace_s),
-                            ): selector.NumberSelector(
-                                selector.NumberSelectorConfig(
-                                    min=5, max=120, step=5,
                                     mode=selector.NumberSelectorMode.BOX,
                                     unit_of_measurement="s",
                                 )

@@ -1,9 +1,8 @@
-"""Edge-case interaction tests for window + presence + preset + follow-tado.
+"""Edge-case interaction tests for window + presence + preset.
 
 These tests verify that automation guards (window frost protection, presence
 away) are respected by all entry points that can change preset/temperature:
 - async_set_temperature (BUG 2 fix)
-- _async_tado_state_changed / follow-tado (BUG 1 fix)
 - _async_boost_expired with PRESET_NONE (BUG 3 fix)
 - HVAC OFF→HEAT window re-evaluation (BUG 4 fix)
 
@@ -35,7 +34,6 @@ _ctrl_mod = _load("climate_controllers")
 
 WindowAutomationController = _ctrl_mod.WindowAutomationController
 PresenceAutomationController = _ctrl_mod.PresenceAutomationController
-FollowPhysicalController = _ctrl_mod.FollowPhysicalController
 SavedState = _ctrl_mod.SavedState
 
 
@@ -305,64 +303,6 @@ class TestBoostExpiryDuringAutomation:
         assert wc.is_active
         restored = wc.restore()
         assert restored.preset == "comfort"
-
-
-# ============================================================================
-# Follow-tado during automation (BUG 1 fix)
-# ============================================================================
-
-class TestFollowTadoDuringAutomation:
-    """Follow-tado must not override frost protection or presence away."""
-
-    def test_follow_tado_blocked_during_window(self):
-        """TRV knob turned while frost protection is active.
-
-        The guard checks window_ctrl.is_active before applying the change.
-        """
-        wc = WindowAutomationController()
-        wc.activate("comfort", 20.0)
-
-        # Guard logic: if window_ctrl.is_active → return (ignore)
-        assert wc.is_active  # Guard would trigger
-
-        # Verify state is unchanged
-        assert wc.get_saved().preset == "comfort"
-        assert wc.get_saved().temp == 20.0
-
-    def test_follow_tado_blocked_during_presence_away(self):
-        """TRV knob turned while presence away is active.
-
-        The guard checks presence_ctrl.is_active before applying the change.
-        """
-        pc = PresenceAutomationController()
-        pc.activate("eco", 17.0)
-
-        # Guard logic: if presence_ctrl.is_active → return (ignore)
-        assert pc.is_active  # Guard would trigger
-
-        # Verify state is unchanged
-        assert pc.is_active
-        saved = pc.restore()
-        assert saved.preset == "eco"
-
-    def test_follow_tado_works_when_no_automation_active(self):
-        """TRV knob turned with no automation → should_follow returns True."""
-        wc = WindowAutomationController()
-        pc = PresenceAutomationController()
-
-        assert not wc.is_active
-        assert not pc.is_active
-
-        # Normal follow-tado would proceed
-        result = FollowPhysicalController.should_follow(
-            tado_setpoint=22.0,
-            last_sent=20.0,
-            last_sent_ts=0,
-            threshold_c=0.5,
-            grace_s=20,
-            now=100,
-        )
-        assert result is True
 
 
 # ============================================================================

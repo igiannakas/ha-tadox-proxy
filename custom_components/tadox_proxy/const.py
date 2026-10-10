@@ -26,9 +26,6 @@ CONF_BOOST_DURATION = "boost_duration"
 CONF_AWAY_TARGET = "away_target"
 CONF_FROST_PROTECTION_TARGET = "frost_protection_target"
 
-# Optional behaviour flags (stored in options)
-CONF_FOLLOW_TADO_INPUT = "follow_tado_input"
-
 # Window sensor (binary_sensor) – optional external trigger
 CONF_WINDOW_SENSOR_ID = "window_sensor_id"
 CONF_WINDOW_DELAY_S = "window_delay_s"
@@ -53,8 +50,6 @@ PRESET_FROST_PROTECTION = "frost_protection"
 PRESET_SCHEDULE = "schedule"
 
 # Behavioural thresholds (stored in options, override BehaviourConfig defaults)
-CONF_FOLLOW_THRESHOLD_C = "follow_threshold_c"
-CONF_FOLLOW_GRACE_S = "follow_grace_s"
 CONF_URGENT_DECREASE_THRESHOLD_C = "urgent_decrease_threshold_c"
 
 # Sensor resilience

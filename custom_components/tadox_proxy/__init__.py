@@ -9,10 +9,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .card import async_register_card
+from .climate_controllers import (
+    CONFIG_ENTRY_MINOR_VERSION,
+    REMOVED_ENTITIES,
+    strip_removed_options,
+)
 from .const import CONF_EXTERNAL_TEMPERATURE_ENTITY_ID, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,7 +30,6 @@ PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
     Platform.NUMBER,
     Platform.SENSOR,
-    Platform.SWITCH,
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -33,6 +38,35 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Serve the dashboard card (custom:tadox-room-card)."""
     await async_register_card(hass)
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate a config entry from an older version."""
+    if entry.version > 1:
+        # Written by a newer major version: refuse rather than guess.
+        return False
+
+    if entry.minor_version < 2:
+        # 1.2: the "follow physical thermostat" feature was removed.  Drop its
+        # stored options and its switch so nothing is left behind.
+        ent_reg = er.async_get(hass)
+        for domain, suffix in REMOVED_ENTITIES:
+            entity_id = ent_reg.async_get_entity_id(
+                domain, DOMAIN, f"{entry.entry_id}{suffix}"
+            )
+            if entity_id is not None:
+                ent_reg.async_remove(entity_id)
+        hass.config_entries.async_update_entry(
+            entry,
+            options=strip_removed_options(entry.options),
+            minor_version=CONFIG_ENTRY_MINOR_VERSION,
+        )
+        _LOGGER.info(
+            "%s: removed the follow-physical-thermostat switch and settings",
+            entry.title,
+        )
+
     return True
 
 

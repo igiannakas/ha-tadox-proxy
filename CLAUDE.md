@@ -30,8 +30,8 @@ Neue Features immer erst in den HA-freien Modulen (`parameters.py`, `regulation.
 - `parameters.py` – Defaults (RegulationConfig, PresetConfig, CorrectionTuning, BehaviourConfig)
 - `regulation.py` – Feedforward + PI Engine + einseitige D-Bremse (HA-unabhängig)
 - `autotune.py` – Hintergrund-Selbstoptimierung von Kp/Ki/Td (HA-unabhängig), Design: `docs/pi-autotune.md`
-- `climate_controllers.py` – Window/Presence/Follow-Zustandsmaschinen (HA-unabhängig)
-- `climate.py` – HA ClimateEntity: Properties, Lifecycle, Config, Follow-Tado
+- `climate_controllers.py` – Window/Presence/Summer/Schedule-Zustandsmaschinen, Config-Entry-Migration (HA-unabhängig)
+- `climate.py` – HA ClimateEntity: Properties, Lifecycle, Config
 - `climate_regulation.py` – RegulationMixin: Regelzyklus, Rate-Limiting, TRV-Kommandos
 - `climate_presets.py` – PresetMixin: Preset-Wechsel, Boost-Timer, Window/Presence-Aktionen
 - `climate_schedule.py` – ScheduleMixin: Zeitplan folgen (input_select), manuelle Übersteuerung mit Ablauf
@@ -40,7 +40,6 @@ Neue Features immer erst in den HA-freien Modulen (`parameters.py`, `regulation.
 - `sensor.py` – Boost-Restzeit-, Zeitplan-Übersteuerungs- und Tuning-Sensoren (Kp/Ki/Td in Verwendung, Selbstoptimierungs-Status und -Modell)
 - `button.py` – „Zeitplan fortsetzen“- und „Selbstoptimierung zurücksetzen“-Button
 - `binary_sensor.py` – Sensor-Degraded-Diagnose
-- `switch.py` – Toggle-Features (z.B. Follow Tado Input)
 - `config_flow.py` – Setup + Options Flow
 - `diagnostics.py` – HA-Diagnostics-Export
 - `card.py` + `www/tadox-room-card.js` – Dashboard-Karte (`custom:tadox-room-card`), per `async_setup` ausgeliefert und als Dashboard-Ressource eingetragen (YAML-Modus: Frontend-Modul); registriert sich erst nach `home-assistant` (Scoped-Registry); liest `boost_duration_min` und `source_entity_id` aus den Climate-Attributen

@@ -17,7 +17,7 @@ Everything you can see, switch, and adjust — looked up rather than read start 
 4. [Schedule](#schedule)
 5. [Summer mode](#summer-mode)
 6. [Turning the thermostat off](#turning-the-thermostat-off)
-7. [Following the physical thermostat](#following-the-physical-thermostat)
+7. [Turning the dial on the radiator](#turning-the-dial-on-the-radiator)
 8. [When the sensor drops out](#when-the-sensor-drops-out)
 9. [Adjustable settings](#adjustable-settings)
 10. [Diagnostic attributes](#diagnostic-attributes)
@@ -63,7 +63,6 @@ Each entry creates:
 | `sensor.<name>_schedule_override_remaining` | Minutes before a manual change hands back to the schedule. Unavailable without a schedule |
 | `button.<name>_resume_schedule` | Hands the room back to the schedule. Unavailable without a schedule |
 | `binary_sensor.<name>_sensor_degraded` | Turns on when your room sensor stops reporting |
-| `switch.<name>_follow_physical_thermostat` | Off by default, see [below](#following-the-physical-thermostat) |
 | `sensor.<name>_kp_in_use`, `_ki_in_use`, `_braking_time_in_use` | The controller values in use right now, learned or yours. Kept in long-term history |
 | `sensor.<name>_auto_tune_status` | Disabled, Learning or Tuning. The attributes show what it measured and why it last changed something |
 | `sensor.<name>_room_dead_time`, `_radiator_coast_time`, `_heat_up_rate`, `_last_heat_up_overshoot` | What auto-tune has learned about the room. Unavailable while auto-tune is off |
@@ -135,9 +134,8 @@ component) sets.
 What happens:
 
 - The room is in whatever preset the helper says.
-- **Manual changes** — a preset, the temperature slider, Boost, your scripts, or the
-  dial on the radiator when "follow physical thermostat" is on — override the
-  schedule. The override ends at the next **change** of the schedule, or after the
+- **Manual changes** — a preset, the temperature slider, Boost or your scripts —
+  override the schedule. The override ends at the next **change** of the schedule, or after the
   override duration, whichever comes first. With a duration of 0 it lasts until the
   schedule changes.
 - **Away** or **Off** (Frost Protection) picked by hand stays until you pick
@@ -209,16 +207,13 @@ honest about what the hardware is actually doing.
 
 ---
 
-## Following the physical thermostat
+## Turning the dial on the radiator
 
-`switch.<name>_follow_physical_thermostat`, **off by default**.
+The proxy is in charge of the radiator thermostat. If you turn the dial on the
+radiator itself, the proxy does not take that over as a new target: its next
+command overwrites it. Change the temperature in Home Assistant instead.
 
-Turn it on if you want to be able to walk up to the radiator, turn the dial, and have
-the proxy accept that as your decision. The proxy then switches to the **Manual**
-preset and holds your temperature instead of overwriting it.
-
-The integration distinguishes your hand from its own commands by how far the new
-value sits from what it last sent — more than 0.5 °C (adjustable) counts as you.
+In summer mode a dial change is pushed back to 5 °C straight away.
 
 ---
 
@@ -342,8 +337,6 @@ communicate wirelessly and every command costs battery.
 | Setting | Default | Range | What it does |
 |---|---|---|---|
 | Sensor grace period | 300 s | 0–1800 s | How long to keep using the last reading when the sensor is missing |
-| Follow-tado threshold | 0.5 °C | 0.1–2.0 °C | How far a change must be from the last sent value to count as a human turning the dial |
-| Follow-tado grace period | 20 s | 5–120 s | Ignore changes on the Tado for this long after sending a command, so it does not mistake its own command for you |
 | Urgent decrease threshold | 1.0 °C | 0.5–3.0 °C | Skip the waiting period when the temperature needs to drop by at least this much |
 
 ---

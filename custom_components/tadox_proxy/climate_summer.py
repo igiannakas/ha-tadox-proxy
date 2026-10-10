@@ -4,7 +4,7 @@ Summer mode is driven by an optional on/off helper (usually an
 ``input_boolean`` shared by every thermostat).  While it is on:
 
 - the TRV is held at a fixed 5 °C in heat mode (no regulation),
-- window, presence and follow-Tado automations are ignored,
+- window and presence automations are ignored,
 - boost is cancelled,
 - every change through Home Assistant (preset, temperature, HVAC mode) is
   refused with an error and the card is snapped back to the locked state,

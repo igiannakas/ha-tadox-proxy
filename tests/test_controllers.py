@@ -30,7 +30,6 @@ _ctrl_mod = _load("climate_controllers")
 
 WindowAutomationController = _ctrl_mod.WindowAutomationController
 PresenceAutomationController = _ctrl_mod.PresenceAutomationController
-FollowPhysicalController = _ctrl_mod.FollowPhysicalController
 SavedState = _ctrl_mod.SavedState
 
 
@@ -613,143 +612,6 @@ class TestPresenceController:
 
 
 # ---------------------------------------------------------------------------
-# FollowPhysicalController
-# ---------------------------------------------------------------------------
-
-class TestFollowPhysicalController:
-
-    def _call(self, **kwargs):
-        return FollowPhysicalController.should_follow(**kwargs)
-
-    # --- no baseline ---
-
-    def test_no_baseline_returns_false(self):
-        assert not self._call(
-            tado_setpoint=21.0,
-            last_sent=None,
-            last_sent_ts=0.0,
-            threshold_c=0.5,
-            grace_s=20.0,
-            now=1000.0,
-        )
-
-    # --- threshold ---
-
-    def test_within_threshold_returns_false(self):
-        assert not self._call(
-            tado_setpoint=20.3,
-            last_sent=20.0,
-            last_sent_ts=0.0,
-            threshold_c=0.5,
-            grace_s=20.0,
-            now=1000.0,
-        )
-
-    def test_exactly_at_threshold_returns_false(self):
-        assert not self._call(
-            tado_setpoint=20.5,
-            last_sent=20.0,
-            last_sent_ts=0.0,
-            threshold_c=0.5,
-            grace_s=20.0,
-            now=1000.0,
-        )
-
-    def test_just_above_threshold_returns_true(self):
-        assert self._call(
-            tado_setpoint=20.6,
-            last_sent=20.0,
-            last_sent_ts=0.0,
-            threshold_c=0.5,
-            grace_s=20.0,
-            now=1000.0,
-        )
-
-    def test_negative_divergence_above_threshold_returns_true(self):
-        """Change in the cooling direction should also be detected."""
-        assert self._call(
-            tado_setpoint=19.4,
-            last_sent=20.0,
-            last_sent_ts=0.0,
-            threshold_c=0.5,
-            grace_s=20.0,
-            now=1000.0,
-        )
-
-    # --- grace period ---
-
-    def test_within_grace_returns_false(self):
-        now = time.time()
-        assert not self._call(
-            tado_setpoint=21.0,
-            last_sent=20.0,
-            last_sent_ts=now - 5,  # 5s ago → within 20s grace
-            threshold_c=0.5,
-            grace_s=20.0,
-        )
-
-    def test_exactly_at_grace_boundary_returns_true(self):
-        """Exactly at grace_s means the grace period has expired → follow."""
-        now = 1000.0
-        assert self._call(
-            tado_setpoint=21.0,
-            last_sent=20.0,
-            last_sent_ts=980.0,  # exactly 20.0s ago (not strictly < 20.0)
-            threshold_c=0.5,
-            grace_s=20.0,
-            now=now,
-        )
-
-    def test_just_inside_grace_returns_false(self):
-        """0.1s before grace expires → still within grace period → no follow."""
-        now = 1000.0
-        assert not self._call(
-            tado_setpoint=21.0,
-            last_sent=20.0,
-            last_sent_ts=980.1,  # 19.9s ago → within 20s grace
-            threshold_c=0.5,
-            grace_s=20.0,
-            now=now,
-        )
-
-    def test_just_past_grace_returns_true(self):
-        now = 1000.0
-        assert self._call(
-            tado_setpoint=21.0,
-            last_sent=20.0,
-            last_sent_ts=979.0,  # 21s ago → past grace
-            threshold_c=0.5,
-            grace_s=20.0,
-            now=now,
-        )
-
-    # --- all conditions met ---
-
-    def test_should_follow_when_all_conditions_met(self):
-        assert self._call(
-            tado_setpoint=22.0,
-            last_sent=20.0,
-            last_sent_ts=0.0,
-            threshold_c=0.5,
-            grace_s=20.0,
-            now=1000.0,
-        )
-
-    # --- now defaults to time.time() ---
-
-    def test_now_defaults_to_current_time(self):
-        """Without explicit now, should_follow uses time.time(); old command → True."""
-        assert self._call(
-            tado_setpoint=22.0,
-            last_sent=20.0,
-            last_sent_ts=0.0,  # very old → well past grace
-            threshold_c=0.5,
-            grace_s=20.0,
-            # no 'now' → uses time.time()
-        )
-
-
-# ---------------------------------------------------------------------------
 # SavedState
 # ---------------------------------------------------------------------------
 
@@ -764,3 +626,35 @@ class TestSavedState:
         s = SavedState(preset="eco", temp=19.5)
         assert s.preset == "eco"
         assert s.temp == 19.5
+
+
+# ---------------------------------------------------------------------------
+# Config entry migration: removed "follow physical thermostat" feature
+# ---------------------------------------------------------------------------
+
+class TestRemovedFeatureMigration:
+
+    def test_follow_options_are_stripped(self):
+        opts = {
+            "follow_tado_input": True,
+            "follow_threshold_c": 0.5,
+            "follow_grace_s": 20,
+            "sensor_grace_s": 300,
+            "urgent_decrease_threshold_c": 1,
+            "correction_kp": 0.6,
+        }
+        assert _ctrl_mod.strip_removed_options(opts) == {
+            "sensor_grace_s": 300,
+            "urgent_decrease_threshold_c": 1,
+            "correction_kp": 0.6,
+        }
+        assert "follow_tado_input" in opts  # input is not modified
+
+    def test_clean_options_unchanged(self):
+        opts = {"sensor_grace_s": 300}
+        assert _ctrl_mod.strip_removed_options(opts) == opts
+        assert _ctrl_mod.strip_removed_options({}) == {}
+
+    def test_switch_entity_marked_for_removal(self):
+        assert ("switch", "_follow_tado_input") in _ctrl_mod.REMOVED_ENTITIES
+        assert _ctrl_mod.CONFIG_ENTRY_MINOR_VERSION == 2

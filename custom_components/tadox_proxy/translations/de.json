@@ -142,17 +142,13 @@
           },
           "behaviour": {
             "name": "Verhalten",
-            "description": "Sensor-Resilienz und Follow-Tado-Schwellwerte.",
+            "description": "Sensor-Resilienz und Schwelle für schnelles Absenken.",
             "data": {
               "sensor_grace_s": "Sensor-Überbrückungszeit",
-              "follow_threshold_c": "Follow-Tado-Schwelle",
-              "follow_grace_s": "Follow-Tado-Karenzzeit",
               "urgent_decrease_threshold_c": "Dringende-Absenkung-Schwelle"
             },
             "data_description": {
               "sensor_grace_s": "Wie lange der letzte gültige Messwert verwendet wird, wenn der externe Sensor ausfällt.",
-              "follow_threshold_c": "Mindestabweichung vom letzten gesendeten Sollwert, um eine Tado-Änderung als physische Eingabe zu erkennen.",
-              "follow_grace_s": "Karenzzeit nach einem Befehl, in der Tado-Sollwertänderungen ignoriert werden (Bestätigungsverzögerung).",
               "urgent_decrease_threshold_c": "Rate-Limiting umgehen, wenn der neue Sollwert so viel unter dem aktuellen Tado-Sollwert liegt."
             }
           }
@@ -254,11 +250,6 @@
     "binary_sensor": {
       "sensor_degraded": {
         "name": "Sensor beeinträchtigt"
-      }
-    },
-    "switch": {
-      "follow_tado_input": {
-        "name": "Physischem Thermostat folgen"
       }
     }
   },
