@@ -736,9 +736,165 @@ class TestPersistence:
         d = _tuner().as_dict()
         del d["last_event"]
         assert _tuner(stored=d).last_event == "waiting for a heat-up"
-        # An episode in progress is not persisted, so its event is stale.
+        # Without the heat-up itself in the stored state, its event is stale.
         d["last_event"] = "heat-up started"
         assert _tuner(stored=d).last_event == "waiting for a heat-up"
+
+
+def _feed(t, ts, sp, room, demand=1.0, eligible=True):
+    """One regulation cycle; the TRV demand is its setpoint - its reading."""
+    return t.observe(A.AutotuneSample(ts, sp, room, 20.0, 20.0 + demand, eligible))
+
+
+def _restart(t, **kw):
+    """Persist through JSON (as Home Assistant does) into a fresh tuner."""
+    import json
+    return _tuner(stored=json.loads(json.dumps(t.as_dict(), allow_nan=False)), **kw)
+
+
+def _heating(t, minutes=30):
+    """A step from 18 to 20 °C with the room rising from 18.5 °C."""
+    _feed(t, 0.0, 18.0, 18.5)
+    _feed(t, 60.0, 20.0, 18.5)
+    assert t.phase == A.PHASE_HEATUP
+    for k in range(2, minutes):
+        _feed(t, k * 60.0, 20.0, 18.5 + 0.02 * k)
+    return (minutes - 1) * 60.0
+
+
+class TestEpisodeAcrossRestart:
+    def test_heatup_in_progress_survives(self):
+        t = _tuner()
+        last = _heating(t)
+        t2 = _restart(t)
+        assert t2.phase == A.PHASE_HEATUP
+        assert t2.last_event == "heat-up continued after a restart"
+        assert t2._heatup.to_dict() == t._heatup.to_dict()
+        _feed(t2, last + 90.0, 20.0, 19.1)          # back after 90 s
+        assert t2.phase == A.PHASE_HEATUP
+
+    def test_restart_is_just_a_gap(self):
+        """After a restart the tuner does exactly what it does when the
+        cycles stop for the same time without one."""
+        def episode(t):
+            return (t.phase, t._heatup.start_ts if t._heatup else None,
+                    len(t._heatup.samples) if t._heatup else 0)
+
+        for gap, continued in ((300.0, True), (1200.0, False)):
+            a, b = _tuner(), _tuner()
+            last = _heating(a)
+            _heating(b)
+            b = _restart(b)
+            for t in (a, b):
+                _feed(t, last + gap, 20.0, 19.0)
+            assert episode(a) == episode(b)
+            assert a.phase == A.PHASE_HEATUP
+            # 20 min down: the old heat-up is discarded and, as the room is
+            # still well below target, heating "resumes" with a new one.
+            assert (b._heatup.start_ts == 60.0) is continued
+
+    def test_long_downtime_discards_the_heatup(self):
+        t = _tuner()
+        last = _heating(t)
+        t = _restart(t)
+        _feed(t, last + 1200.0, 20.0, 19.9)         # room close to target now
+        assert t.phase != A.PHASE_HEATUP
+        assert t.last_event == "heat-up discarded (data_gap)"
+
+    def test_clock_jumping_back_discards_the_heatup(self):
+        t = _tuner()
+        last = _heating(t)
+        t = _restart(t)
+        _feed(t, last - 3600.0, 20.0, 19.9)
+        assert t.phase != A.PHASE_HEATUP
+
+    def test_step_across_a_reload_starts_a_heatup(self):
+        """Changing a preset temperature reloads the room; the step must
+        still count (it used to be lost with the previous setpoint)."""
+        t = _tuner()
+        for k in range(5):
+            _feed(t, k * 60.0, 20.0, 20.0)
+        t2 = _restart(t)
+        _feed(t2, 300.0, 21.5, 20.0)
+        assert t2.phase == A.PHASE_HEATUP
+        assert t2.last_event == "heat-up started"
+        # State saved by the previous version has no episode: still loads.
+        d = t.as_dict()
+        del d["episode"]
+        t3 = _tuner(stored=d)
+        _feed(t3, 300.0, 21.5, 20.0)
+        assert t3.phase != A.PHASE_HEATUP
+
+    def test_changed_baseline_drops_the_heatup(self):
+        t = _tuner()
+        _heating(t)
+        assert _restart(t, kp=0.8).phase == A.PHASE_IDLE
+
+    def test_reset_drops_the_heatup(self):
+        t = _tuner()
+        _heating(t)
+        t.reset()
+        assert _restart(t).phase == A.PHASE_IDLE
+
+    @pytest.mark.parametrize("episode", [
+        "x", [], {"heatup": "x"}, {"heatup": {"start_ts": "a"}},
+        {"heatup": {"start_ts": 0.0, "setpoint_c": 20.0, "last_cycle_ts": -5.0, "samples": []}},
+        {"heatup": {"start_ts": 0.0, "setpoint_c": 20.0, "last_cycle_ts": 120.0,
+                    "samples": [[60.0, 19.0, 1.0], [0.0, 19.0, 1.0]]}},       # out of order
+        {"heatup": {"start_ts": 0.0, "setpoint_c": 20.0, "last_cycle_ts": 120.0,
+                    "samples": [[0.0, float("nan"), 1.0]]}},
+        {"heatup": {"start_ts": 0.0, "setpoint_c": 20.0, "last_cycle_ts": 120.0,
+                    "samples": [[0.0, 19.0]]}},
+        {"heatup": {"start_ts": 0.0, "setpoint_c": 20.0, "last_cycle_ts": 120.0,
+                    "samples": [[9999.0, 19.0, 1.0]]}},                       # after the end
+        {"heatup": {"start_ts": 0.0, "setpoint_c": 20.0, "last_cycle_ts": 120.0,
+                    "samples": [], "cross_ts": 500.0}},
+        {"heatup": {"start_ts": 0.0, "setpoint_c": 20.0, "last_cycle_ts": 1e9,
+                    "samples": [[0.0, 19.0, 1.0]] * 6000}},
+        {"prev_sp": "x", "prev_ts": float("inf"), "heatup": None},
+    ])
+    def test_garbage_episode_is_dropped_but_learning_kept(self, episode):
+        t = _tuner()
+        t._on_heatup(_heatup(DAY, 0.6), DAY)
+        d = t.as_dict()
+        d["episode"] = episode
+        t2 = _tuner(stored=d)
+        assert t2.phase == A.PHASE_IDLE
+        assert t2.active_tuning() == t.active_tuning()
+        assert t2._counters["heatups"] == 1
+        _feed(t2, DAY + 60.0, 20.0, 19.0)           # and it keeps working
+
+    def test_restart_mid_heatup_learns_the_same(self):
+        """Closed loop: a restart in the middle of the evening heat-up gives
+        the same measurements as no restart at all."""
+        def run(restart_at_h):
+            c = P.RegulationConfig()
+            c.tuning = P.CorrectionTuning(kp=0.6, ki=0.002)
+            c.gain_fine_threshold_c = 1.0
+            sim = RoomSim(PlantParams(**LIVING), R, c, ProxySettings(), y0=19.0,
+                          tuner=_tuner(), autotune_module=A, seed=3)
+            if restart_at_h is not None:
+                sim.run(restart_at_h, SCHED)
+                assert sim.tuner.phase == A.PHASE_HEATUP
+                sim.tuner = _restart(sim.tuner)
+                sim.run(48 - restart_at_h, SCHED)
+            else:
+                sim.run(48, SCHED)
+            return sim.tuner
+
+        plain, restarted = run(None), run(18.0)
+        a = [m.as_dict() for m in plain._heatups]
+        b = [m.as_dict() for m in restarted._heatups]
+        assert len(a) == len(b) >= 3
+        for ma, mb in zip(a, b):
+            assert ma.keys() == mb.keys()
+            for k in ma:
+                if isinstance(ma[k], float):
+                    assert mb[k] == pytest.approx(ma[k], rel=0.02, abs=0.01), k
+                else:
+                    assert mb[k] == ma[k], k
+        pa, pb = plain.active_tuning(), restarted.active_tuning()
+        assert [pb.kp, pb.ki, pb.td_s] == pytest.approx([pa.kp, pa.ki, pa.td_s], rel=0.02)
 
 
 # ---------------------------------------------------------------------------

@@ -138,6 +138,10 @@ Read this before changing `autotune.py` or `AutotuneConfig`.
 - Learned values live **only** in the restore-state extra data (key
   `autotune`). Never write them to the config entry options: that would
   reload the integration.
+- A heat-up in progress and the previous cycle's setpoint are saved there too
+  (`episode`), because changing a preset temperature reloads the entry. A
+  restart is then just a gap between cycles: longer than `max_gap_s`
+  (10 min) ends the heat-up, as any gap does. Hold windows are not saved.
 - All limits live in `AutotuneConfig` (`parameters.py`). `tests/plant_sim.py`
   simulates room + radiator + Tado TRV (with its own PI) + proxy in closed
   loop. Check control or auto-tune changes against it.

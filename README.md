@@ -76,6 +76,8 @@ Turn it on per room: **Configure → Auto-tune → Enable auto-tune**.
   room is cooler, for example a schedule going from Night to Comfort.
 - The first values appear after the first heat-up, and they settle in about a
   week.
+- A heat-up carries on after a restart or a settings change, if Home
+  Assistant is back within 10 minutes.
 - It changes values a little at a time, stays within safe limits around your
   own values, and undoes any change that makes things worse.
 - Sensors per room:

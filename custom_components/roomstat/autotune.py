@@ -526,12 +526,67 @@ class _HeatupTracker:
             return _TRUNCATED
         return _ABORT
 
+    # -- persistence (a heat-up in progress survives a reload or restart) --
+    _MAX_SAMPLES = 5000   # 5 h at one cycle a minute is 300
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "start_ts": self.start_ts,
+            "setpoint_c": self.setpoint_c,
+            # [seconds since start, room °C, TRV demand °C]
+            "samples": [[round(t - self.start_ts, 1), round(y, 3),
+                         None if d is None else round(d, 3)]
+                        for t, y, d in self.samples],
+            "demand_was_positive": self.demand_was_positive,
+            "cross_ts": self.cross_ts,
+            "peak_c": self.peak_c if _finite(self.peak_c) else None,
+            "peak_ts": self.peak_ts,
+            "last_cycle_ts": self._last_cycle_ts,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Any, cfg: AutotuneConfig) -> _HeatupTracker | None:
+        """Rebuild a stored heat-up, or None if anything looks wrong."""
+        if not isinstance(d, dict):
+            return None
+        start, sp, last = d.get("start_ts"), d.get("setpoint_c"), d.get("last_cycle_ts")
+        if not _finite(start, sp, last) or last < start:
+            return None
+        raw = d.get("samples")
+        if not isinstance(raw, list) or len(raw) > cls._MAX_SAMPLES:
+            return None
+        samples: list[tuple[float, float, float | None]] = []
+        prev_off = 0.0
+        for x in raw:
+            if not isinstance(x, list) or len(x) != 3:
+                return None
+            off, y, dem = x
+            if not _finite(off, y) or off < prev_off or start + off > last + 1.0:
+                return None
+            if dem is not None and not _finite(dem):
+                return None
+            samples.append((start + off, float(y), None if dem is None else float(dem)))
+            prev_off = off
+        cross = d.get("cross_ts")
+        if cross is not None and not (_finite(cross) and start <= cross <= last):
+            return None
+        tr = cls(float(start), float(sp), cfg)
+        tr.samples = samples
+        tr.demand_was_positive = d.get("demand_was_positive") is True
+        tr.cross_ts = None if cross is None else float(cross)
+        peak, peak_ts = d.get("peak_c"), d.get("peak_ts")
+        if _finite(peak, peak_ts):
+            tr.peak_c, tr.peak_ts = float(peak), float(peak_ts)
+        tr._last_cycle_ts = float(last)
+        return tr
+
     def add(self, s: AutotuneSample) -> str:
         if not s.eligible:
             return self._stop("not_eligible", s.ts)
         if s.setpoint_c is None or abs(s.setpoint_c - self.setpoint_c) > 0.05:
             return self._stop("setpoint_changed", s.ts)
-        if s.ts - self._last_cycle_ts > 600:
+        gap = s.ts - self._last_cycle_ts
+        if gap > self.cfg.max_gap_s or gap < 0:
             self.abort_reason = "data_gap"
             return _ABORT
         self._last_cycle_ts = s.ts
@@ -574,7 +629,7 @@ class _HoldTracker:
     def add(self, s: AutotuneSample) -> str:
         if not s.eligible or s.setpoint_c is None or abs(s.setpoint_c - self.setpoint_c) > 0.05:
             return _ABORT
-        if s.ts - self._last_cycle_ts > 600:
+        if not 0 <= s.ts - self._last_cycle_ts <= self.cfg.max_gap_s:
             return _ABORT
         self._last_cycle_ts = s.ts
         if s.room_temp_c is not None:
@@ -650,10 +705,11 @@ class Autotuner:
         self.derivative_allowed = derivative_allowed
         self._baseline = baseline
         self._now = 0.0
-        self._reset_learning()
-        if stored is not None:
-            self._load(stored)
-        # Transient (not persisted): an episode in progress is dropped on restart.
+        # Episode context.  A heat-up in progress and what the previous cycle
+        # saw are persisted, so a reload (e.g. a preset temperature change)
+        # neither loses the heat-up nor hides a setpoint step.  A restart is
+        # then just a gap between two cycles and follows the usual rules
+        # (max_gap_s).  A hold window and the spike filter start afresh.
         self._heatup: _HeatupTracker | None = None
         self._hold: _HoldTracker | None = None
         self._spikes = SpikeFilter()
@@ -662,6 +718,9 @@ class Autotuner:
         self._prev_eligible = True
         self._sp_since_ts: float | None = None
         self._last_heatup_end_ts = -math.inf
+        self._reset_learning()
+        if stored is not None:
+            self._load(stored)
 
     # -- state -------------------------------------------------------------
     def _reset_learning(self) -> None:
@@ -830,7 +889,7 @@ class Autotuner:
                            s.room_temp_ts if _finite(s.room_temp_ts) else None)
         resumed = (
             self._prev_ts is not None
-            and (not self._prev_eligible or s.ts - self._prev_ts > 600)
+            and (not self._prev_eligible or s.ts - self._prev_ts > self.cfg.max_gap_s)
         )
 
         if self._heatup is not None:
@@ -1226,6 +1285,15 @@ class Autotuner:
             "counters": dict(self._counters),
             "last_update_reason": self.last_update_reason,
             "last_event": self.last_event,
+            "episode": {
+                "heatup": self._heatup.to_dict() if self._heatup is not None else None,
+                "prev_sp": self._prev_sp,
+                "prev_ts": self._prev_ts,
+                "prev_eligible": self._prev_eligible,
+                "sp_since_ts": self._sp_since_ts,
+                "last_heatup_end_ts": (self._last_heatup_end_ts
+                                       if _finite(self._last_heatup_end_ts) else None),
+            },
         }
 
     def _load(self, d: Any) -> None:
@@ -1268,8 +1336,8 @@ class Autotuner:
                     self._counters[k] = v
             if isinstance(d.get("last_update_reason"), str):
                 self.last_update_reason = d["last_update_reason"][:200]
-            # Keep the last real event across restarts.  An episode in progress
-            # is not persisted, so "heat-up started" would be stale.
+            # Keep the last real event across restarts.  "heat-up started" is
+            # only true if that heat-up came back with the state.
             ev = d.get("last_event")
             if isinstance(ev, str) and ev and ev != "heat-up started":
                 self.last_event = ev[:200]
@@ -1280,3 +1348,32 @@ class Autotuner:
         except (TypeError, ValueError, KeyError, AttributeError, IndexError):
             _LOGGER.warning("Auto-tune: stored state unreadable, starting fresh")
             self._reset_learning()
+            return
+        self._load_episode(d.get("episode"))
+
+    def _load_episode(self, e: Any) -> None:
+        """Restore the episode context; anything malformed is simply dropped."""
+        self._heatup = None
+        self._hold = None
+        if not isinstance(e, dict):
+            return
+        try:
+            def opt(key: str) -> float | None:
+                v = e.get(key)
+                return float(v) if _finite(v) else None
+
+            self._prev_sp = opt("prev_sp")
+            self._prev_ts = opt("prev_ts")
+            self._prev_eligible = e.get("prev_eligible") is not False
+            self._sp_since_ts = opt("sp_since_ts")
+            end = opt("last_heatup_end_ts")
+            self._last_heatup_end_ts = end if end is not None else -math.inf
+            self._heatup = _HeatupTracker.from_dict(e.get("heatup"), self.cfg)
+        except (TypeError, ValueError, KeyError, AttributeError, IndexError):
+            self._heatup = None
+            self._prev_sp = self._prev_ts = self._sp_since_ts = None
+            self._prev_eligible = True
+            self._last_heatup_end_ts = -math.inf
+            return
+        if self._heatup is not None:
+            self.last_event = "heat-up continued after a restart"

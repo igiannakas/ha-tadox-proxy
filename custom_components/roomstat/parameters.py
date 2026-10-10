@@ -110,6 +110,9 @@ class AutotuneConfig:
     # or if it ran at least this long (dead time and heating rate only).
     truncated_min_after_cross_s: float = 15 * 60.0
     truncated_min_duration_s: float = 45 * 60.0
+    # A longer gap between two regulation cycles ends the episode in
+    # progress.  This also decides whether a heat-up survives a restart.
+    max_gap_s: float = 600.0
 
     # Hold windows (steady setpoint, room near target, heating active).
     hold_window_s: float = 3 * 3600.0  # evaluated every window

@@ -13,6 +13,7 @@ from tests.ha_harness import (
     _climate,
     _Extra,
     _make_entity,
+    _restart_from,
     _run,
     _start,
     e2e,
@@ -240,3 +241,44 @@ def test_room_report_time_reaches_tuner(monkeypatch):
                             "tado_internal_temp": 21.0, "tado_setpoint": None}
     _run(ent._async_regulation_cycle("timer"))
     assert seen[-1].room_temp_ts == 1234.5
+
+
+def test_heatup_survives_reload_and_restart(monkeypatch):
+    """Changing the Comfort temperature reloads the room.  The step must
+    still start a heat-up, and a heat-up in progress must carry on after a
+    reload or a restart."""
+    clock = _Clock(monkeypatch)
+    ent = _make_entity({**AUTOTUNE_ON, "comfort_target": 20.0})
+    _run(_start(ent))
+    for _ in range(3):
+        _feed(ent, room=20.0, tado=20.0)
+        _run(ent._async_regulation_cycle("timer"))
+        clock.tick(60)
+    assert ent._autotuner.phase != "heat_up"
+
+    # The number entity writes the option; the entity follows it, then
+    # Home Assistant reloads the entry (a new entity restores the old one).
+    opts = {**ent._config_entry.options, "comfort_target": 21.5}
+    ent._config_entry.options = opts
+    _run(ent._async_config_entry_updated(None, ent._config_entry))
+    ent2 = _make_entity(opts)
+    _restart_from(ent, ent2)
+    _feed(ent2, room=20.0, tado=20.0)
+    _run(ent2._async_regulation_cycle("timer"))
+    assert ent2._autotuner.phase == "heat_up"
+    started = ent2._autotuner._heatup.start_ts
+    for _ in range(5):
+        clock.tick(60)
+        _feed(ent2, room=20.05, tado=21.0)
+        _run(ent2._async_regulation_cycle("timer"))
+
+    # Restart in the middle of the heat-up: it carries on.
+    ent3 = _make_entity(opts)
+    _restart_from(ent2, ent3)
+    assert ent3.autotune_summary()["last_event"] == "heat-up continued after a restart"
+    clock.tick(90)
+    _feed(ent3, room=20.1, tado=21.0)
+    _run(ent3._async_regulation_cycle("timer"))
+    assert ent3._autotuner.phase == "heat_up"
+    assert ent3._autotuner._heatup.start_ts == started
+    assert len(ent3._autotuner._heatup.samples) == 7
