@@ -1,7 +1,7 @@
 """Background PI(D) auto-tuning for Roomstat (HA-independent).
 
-Design summary (full rationale: docs/pi-autotune.md)
-----------------------------------------------------
+Design summary (more in CLAUDE.md, "Auto-tune")
+-----------------------------------------------
 The proxy cannot move the valve.  It sets a target for the TRV, whose own
 controller (with its own integrator) moves the valve.  Because the
 feedforward cancels the TRV reading, the TRV acts on

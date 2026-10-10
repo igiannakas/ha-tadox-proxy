@@ -534,10 +534,10 @@ async function registerCard() {
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: "roomstat-card",
-    name: "Tado X room",
+    name: "Roomstat room",
     description: "Room temperature, heating and mode buttons for a Roomstat thermostat.",
     preview: true,
-    documentationURL: "https://github.com/igiannakas/ha-roomstat/blob/main/docs/dashboard-card.md",
+    documentationURL: "https://github.com/igiannakas/ha-roomstat#dashboard-card",
   });
   console.info(`%c ROOMSTAT-CARD %c ${CARD_VERSION} `, "background:#f44336;color:#fff", "");
 }

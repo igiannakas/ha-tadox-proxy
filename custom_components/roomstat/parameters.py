@@ -45,12 +45,12 @@ class CorrectionTuning:
     # Derivative brake time (s).  0 = off (default).  Only ever *reduces*
     # the command while the room temperature is rising, so the TRV stops
     # heating before the room reaches the target instead of after it.  See
-    # regulation.py and docs/pi-autotune.md for why this is one-sided.
+    # regulation.py and CLAUDE.md for why this is one-sided.
     td_s: float = 0.0
 
 
 # ---------------------------------------------------------------------------
-# Auto-tune (see autotune.py and docs/pi-autotune.md)
+# Auto-tune (see autotune.py and CLAUDE.md)
 # ---------------------------------------------------------------------------
 
 @dataclass

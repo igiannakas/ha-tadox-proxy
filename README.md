@@ -1,179 +1,138 @@
 # Roomstat
 
-Heats your room to the temperature you set, using Tado X radiator thermostats and Home Assistant.
-
 [![Tests](https://github.com/igiannakas/ha-roomstat/actions/workflows/tests.yml/badge.svg)](https://github.com/igiannakas/ha-roomstat/actions/workflows/tests.yml)
 ![Version](https://img.shields.io/badge/version-2.0.0-blue)
 ![HA](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-41BDF5)
 
-**Read this page in your language:**
-[Deutsch](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=de&_x_tr_hl=de) ·
-[Nederlands](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=nl&_x_tr_hl=nl) ·
-[Français](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=fr&_x_tr_hl=fr) ·
-[Italiano](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=it&_x_tr_hl=it) ·
-[Español](https://github-com.translate.goog/igiannakas/ha-roomstat?_x_tr_sl=en&_x_tr_tl=es&_x_tr_hl=es)
+Roomstat heats each room to the temperature measured by a sensor in the room,
+not the temperature at the radiator. It works with Tado X radiator thermostats
+in Home Assistant.
 
-*(Automatic translation by Google. The English text is the original.)*
+Roomstat is based on
+**[Tado X Proxy Thermostat](https://github.com/kinimodb/ha-tadox-proxy)** by
+kinimodb. Read the upstream README for what the integration does, how it
+regulates and what its settings mean. This page lists only what Roomstat
+changes.
 
----
+## What's different
 
-## Your room is colder than your thermostat says
+**Renamed**
+- New name and internal ID (`roomstat`). It does not take over existing
+  Tado X Proxy rooms. See [Moving from Tado X Proxy](#moving-from-tado-x-proxy).
 
-Your Tado X shows 21 °C. Your room feels like 19 °C. You are not imagining it.
+**Control**
+- **Auto-tune.** Learns Kp, Ki and the braking time of each room in the
+  background, from everyday heat-ups. Off by default. See [Auto-tune](#auto-tune).
+- **Heat-up braking.** Stops heating a little before the room reaches its
+  target, so the heat still in the radiator doesn't push it past. It can only
+  ever reduce heating.
+- **Commands stop at 25 °C.** That's the highest value the Tado climate
+  entities accept. Higher values were refused, so the room didn't heat.
 
-A Tado X sits on the radiator. So it measures the air right next to the radiator.
-That air is always warmer than the rest of the room. The Tado believes the room is
-warm enough and turns the heating down too early.
+**Modes**
+- **Schedule.** The room follows a helper that your scheduler sets. Manual
+  changes win for a while, then the schedule takes over again. See
+  [Schedule](#schedule).
+- **Summer mode.** One switch locks every room at 5 °C. See
+  [Summer mode](#summer-mode).
+- **Away and Off stay** until you change them, also when the schedule moves on.
+- **Eco is called Night.**
+- **Presence** can be an `input_boolean` as well as a binary sensor.
+- **Fixes:**
+  - the chosen mode survives restarts, reloads and window open/close;
+  - a running Boost carries on after a restart;
+  - a Boost saved by the window or presence logic comes back as Comfort.
 
-The result: your room stays 1 to 3 °C colder than the number on the display.
-Every single day.
+**Dashboard**
+- A room card comes with the integration. See [Dashboard card](#dashboard-card).
 
----
+**Removed**
+- The "Follow physical thermostat" switch and its two settings. If you turn
+  the dial on the radiator, the next command from Roomstat overrides it.
 
-## What this integration does
+## Install
 
-You place a small temperature sensor somewhere in the room — on a shelf, on a wall,
-anywhere away from the radiator and the window. That sensor knows the real temperature.
+1. In HACS, open **⋮ → Custom repositories**. Add
+   `https://github.com/igiannakas/ha-roomstat` as an **Integration**.
+2. Download **Roomstat** and restart Home Assistant.
+3. Go to **Settings → Devices & services → Add integration → Roomstat**.
+4. Pick the radiator thermostat, a temperature sensor in the room, and a name.
+   Add one entry per radiator thermostat.
 
-This integration then does what you would do by hand: **it sets the Tado higher than
-you actually want it.**
+Everything else is under **Configure** on each entry.
 
-Here is the idea:
+## Moving from Tado X Proxy
 
-> You ask for 21 °C. The room is at 19 °C.
-> So the integration tells the Tado: *"heat to 23"*.
-> The radiator keeps running. The room reaches 21 °C.
-> Then the integration dials the Tado back down.
+Roomstat and Tado X Proxy can't control the same radiator thermostat.
 
-It repeats this every few minutes. Over time it learns how much extra your particular
-room needs, and it adjusts by itself. Rooms differ: a small room with a big radiator
-needs less help than a draughty room with a small one.
+1. Note each room's settings.
+2. Delete the room's Tado X Proxy entry.
+3. Add the room in Roomstat with **the same name**, so the entity IDs come back
+   unchanged. Then enter the settings again.
+4. In your dashboards, change `custom:tadox-room-card` to
+   `custom:roomstat-card`.
 
-You never deal with those numbers. You set 21 °C and you get 21 °C.
+## Auto-tune
 
-In practice most rooms stay within about half a degree of the temperature you asked for.
+Turn it on per room: **Configure → Auto-tune → Enable auto-tune**.
 
----
+- It learns from heat-ups: a target that rises by 0.5 °C or more while the
+  room is cooler, for example a schedule going from Night to Comfort.
+- The first values appear after the first heat-up, and they settle in about a
+  week.
+- It changes values a little at a time, stays within safe limits around your
+  own values, and undoes any change that makes things worse.
+- Sensors per room:
+  - Kp, Ki and braking time in use;
+  - auto-tune status;
+  - what it measured (dead time, coast time, heat-up rate, last overshoot).
+- **Reset auto-tune** forgets everything it learned. Changing Kp, Ki or the
+  braking time yourself also starts learning again.
 
-## Is this for me?
+You can set the braking time by hand instead, under **Configure → PI
+Controller → Heat-up braking time** (0 = off).
 
-**This helps you if:**
+## Schedule
 
-- You have one or more Tado X radiator thermostats.
-- Your rooms never quite reach the temperature you set.
-- You have a temperature sensor in the room, or you are willing to buy one.
-- You run Home Assistant.
+**Configure → Schedule → Schedule helper:** an `input_select` that your
+scheduler sets to `comfort`, `night`, `away` or `frost_protection`.
 
-**This will not help you if:**
+- The room switches to whatever the helper says.
+- A manual change (preset, temperature or Boost) wins until the next schedule
+  change, or until the **Override duration** has passed. 0 means until the
+  next schedule change.
+- **Resume schedule** (a button, and a preset) ends a manual change straight
+  away.
 
-- You have underfloor heating, electric radiators, or steam heating.
-  Those work completely differently.
-- You only have Tado wall thermostats and no radiator thermostats.
-- You do not want a second sensor in the room. Without it the integration cannot
-  know the real temperature, and there is nothing it can do.
+## Summer mode
 
----
+**Configure → Summer mode switch:** an `input_boolean`. Use the same one for
+every room.
 
-## What it costs you
+- **On:** every room is held at 5 °C. Changes from Home Assistant are refused,
+  and a turn of the dial on the radiator is put back.
+- **Off:** every room goes back to its schedule, or to Comfort.
 
-- **A temperature sensor for each room you want to fix.** Any sensor that shows up
-  in Home Assistant works — Zigbee, Bluetooth, Wi-Fi, whatever you already use.
-  These typically start around 10–15 €.
-- **About ten minutes** of setup per room.
-- **Nothing else.** No cloud service, no account, no subscription. The integration
-  runs entirely inside your own Home Assistant.
+## Dashboard card
 
----
+Add a card, choose **Roomstat room** and pick the thermostat. Or use YAML:
 
-## Getting started
+```yaml
+type: custom:roomstat-card
+entity: climate.living_room_thermostat
+```
 
-**→ [Step-by-step setup guide](docs/setup.md)**
-
-It walks you through installing, connecting your radiator thermostat and your room
-sensor, and checking that it works. No prior knowledge needed.
-
----
-
-## Do I have to configure anything?
-
-**No.** This is the most common misunderstanding, so to be clear:
-
-The integration ships with settings that work in most rooms. Install it, point it at
-your radiator thermostat and your room sensor, and leave everything else alone. It
-will do its job.
-
-There *are* a lot of adjustable values, and you will see them if you go looking.
-They exist for unusual rooms and for people who enjoy fiddling. **You can ignore all
-of them.** If your room heats up and holds its temperature, you are finished.
-
-Come back to the settings only if something is actually wrong.
-
----
-
-## Everyday features
-
-Beyond the temperature correction, you get:
-
-- **Presets** — Comfort, Night, Away, Boost, Frost Protection. One tap each.
-- **Window detection** — when a window contact opens, heating drops to frost
-  protection and comes back afterwards. Optional.
-- **Presence detection** — when nobody is home, the room drops to Away and recovers
-  when someone returns. Optional.
-- **Summer mode** — one switch turns the heating off in every room and locks it until
-  you switch it back. Optional.
-- **Schedule** — follows a schedule you make with a scheduler of your choice. You can
-  still change a room by hand; it goes back to the schedule by itself. Optional.
-- **Dashboard card** — one card per room with temperatures, heating % and mode
-  buttons. Comes with the integration; see [Dashboard card](docs/dashboard-card.md).
-- **Auto-tune** — learns how your room heats up and adjusts itself, so the room
-  stops going past the temperature you asked for. Off unless you switch it on.
-  Optional.
-
-Details for all of these are in the [settings reference](docs/settings.md).
-
----
-
-## Documentation
-
-Start at the top and go down only as far as you need to.
-
-| If you want to… | Read this |
+| Option | What it does |
 |---|---|
-| Get it running | **[Setup guide](docs/setup.md)** |
-| Look up a preset, a switch, or an option | [Settings reference](docs/settings.md) |
-| Put a room on a dashboard | [Dashboard card](docs/dashboard-card.md) |
-| Fix a room that heats too slowly or overshoots | [Tuning guide](TUNING.md) |
-| Understand how the correction actually works | [How it works](docs/how-it-works.md) |
+| `entity` | The Roomstat thermostat (required). |
+| `name` | The title. Defaults to the area name. |
+| `icon` | The room icon. Defaults to the area icon. |
+| `heating_entity` | The valve's heating % sensor, if it isn't found automatically. |
 
----
-
-## Something not working?
-
-The [setup guide](docs/setup.md#when-something-is-wrong) covers the common problems:
-the room stays cold, the temperature swings up and down, or the integration seems to
-do nothing at all.
-
-If that does not help, open an
-[issue on GitHub](https://github.com/igiannakas/ha-roomstat/issues).
-
-**Known problem:** configuring the integration in the iOS Companion App crashes when
-you pick an entity. This is a bug in Home Assistant itself, not in this integration.
-Use a normal web browser to set it up.
-
----
-
-## Requirements
-
-- Home Assistant 2026.3 or newer
-- [HACS](https://hacs.xyz) installed
-- At least one Tado X radiator thermostat visible in Home Assistant — the one screwed
-  onto the radiator, not a wall thermostat
-- One temperature sensor per room
-- One entry per radiator: a room with two radiators gets two entries, both using the
-  same room sensor
-
----
+It shows the room and target temperature, the heating %, and what the room is
+doing. Buttons: Off, Night, Day, Boost and Schedule.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE)
+MIT. The original work is © kinimodb, and the Roomstat changes are
+© igiannakas. See [LICENSE](LICENSE).
