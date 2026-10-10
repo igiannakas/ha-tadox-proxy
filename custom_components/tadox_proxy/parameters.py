@@ -102,6 +102,8 @@ class AutotuneConfig:
     simc_lambda: float = 1.5
     # Ti may not drop below this multiple of (tau_c + theta).  SIMC uses 4.
     simc_ti_factor_min: float = 2.0
+    # Heat-ups with a dead time needed before the SIMC Ki is used.
+    simc_min_episodes: int = 2
 
     # Heat-up episode detection.
     heatup_min_step_c: float = 0.5     # setpoint step that starts an episode
@@ -113,10 +115,10 @@ class AutotuneConfig:
     theta_min_step_c: float = 0.8
     rate_min_step_c: float = 0.6
     # An episode cut short by the schedule is kept if the TRV demand had
-    # already gone <= 0 at least this long before.
+    # already gone <= 0 at least this long before (coast as a lower bound),
+    # or if it ran at least this long (dead time and heating rate only).
     truncated_min_after_cross_s: float = 15 * 60.0
-    # ... and its peak counts as final if it is at least this old.
-    truncated_peak_age_s: float = 15 * 60.0
+    truncated_min_duration_s: float = 45 * 60.0
 
     # Hold windows (steady setpoint, room near target, heating active).
     hold_window_s: float = 3 * 3600.0  # evaluated every window

@@ -257,7 +257,7 @@ class TestAnalyseHeatup:
                              cross_ts=cross * 60.0, tuning=A.Tuning(0.6, 0.002),
                              truncated=True)
         assert m.overshoot_c is None
-        assert m.coast_s is None
+        assert m.truncated                 # any coast is only a lower bound
 
     def test_truncated_high_peak_is_kept(self):
         s, cross = _synthetic_heatup(overshoot=0.8)
@@ -266,7 +266,7 @@ class TestAnalyseHeatup:
                              cross_ts=cross * 60.0, tuning=A.Tuning(0.6, 0.002),
                              truncated=True)
         assert m.overshoot_c is not None and m.overshoot_c > CFG.overshoot_target_c
-        assert m.coast_s is None           # a lower-bound coast could lower Td
+        assert m.truncated                 # its coast only counts as a lower bound
 
     def test_two_sample_glitch_does_not_inflate_overshoot(self):
         s, cross = _synthetic_heatup(overshoot=0.15)
@@ -388,9 +388,9 @@ class TestSafety:
                             crossed=rng.random() < 0.8)
                 if rng.random() < 0.1:
                     m.overshoot_c = None
-                reason = t._on_heatup(m, now)
+                t._on_heatup(m, now)
             else:
-                reason = t._on_hold(_hold(now, mean=rng.uniform(-1, 1), osc=rng.random() < 0.3,
+                t._on_hold(_hold(now, mean=rng.uniform(-1, 1), osc=rng.random() < 0.3,
                                           amp=rng.uniform(0, 1.5), period=rng.uniform(600, 40000),
                                           half=rng.randint(0, 8), heating=rng.random()), now)
             after = t.active_tuning()
@@ -432,13 +432,33 @@ class TestSafety:
         assert t._maybe_update(DAY + 1800, "test") is None         # < 3 h
         assert t._maybe_update(DAY + 4 * 3600, "test") is not None
 
-    def test_first_heatup_starts_braking_and_lowers_ki(self):
+    def test_first_heatup_starts_braking_second_moves_ki(self):
         t = _tuner()
         reason = t._on_heatup(_heatup(DAY, 0.6, coast=1800), DAY)
         a = t.active_tuning()
         assert reason and a.td_s == pytest.approx(300.0)           # first 5-min step
-        assert a.ki < 0.002                                         # towards SIMC
-        assert a.kp == 0.6
+        assert a.ki == 0.002                # one dead time is not enough for SIMC
+        t._on_heatup(_heatup(2 * DAY, 0.5, coast=1800, td=a.td_s), 2 * DAY)
+        assert t.active_tuning().ki < 0.002                         # towards SIMC
+        assert t.active_tuning().kp == 0.6
+
+    def test_lower_bound_coast_only_raises_td(self):
+        t = _tuner()
+        t._on_heatup(_heatup(DAY, 0.6, coast=2400, truncated=True), DAY)
+        td1 = t.active_tuning().td_s
+        assert td1 > 0
+        # a later, shorter lower bound (old one aged out) must not lower Td
+        t._heatups = [_heatup(2 * DAY, 0.6, coast=300, truncated=True, td=td1)]
+        t._last_change_ts = 0
+        t._maybe_update(3 * DAY, "test")
+        assert t.active_tuning().td_s >= td1
+
+    def test_complete_coast_beats_lower_bounds(self):
+        t = _tuner()
+        t._heatups = [_heatup(DAY, 0.6, coast=3000, truncated=True),
+                      _heatup(2 * DAY, 0.6, coast=1200)]
+        assert t._model()["coast_s"] == 1200
+        assert not t._model()["coast_is_lower_bound"]
 
     def test_rollback_on_worse_overshoot(self):
         t = _tuner(deriv=False)
@@ -672,11 +692,11 @@ LIVING = dict(trv_offset_c=-9.9, tau_room_h=50, t_out_c=12, trv_beta_c=6, tado_k
 SCHED = schedule_from([(0, 18.0), (6, 20.0), (8, 5.0), (17, 20.0), (22.5, 18.0)])
 
 
-def _closed_loop(plant_kw, kp, ki, days, sched=SCHED, td=0.0, deriv=True):
+def _closed_loop(plant_kw, kp, ki, days, sched=SCHED, td=0.0, deriv=True, cfg=None):
     c = P.RegulationConfig()
     c.tuning = P.CorrectionTuning(kp=kp, ki=ki, td_s=td)
     c.gain_fine_threshold_c = 1.0
-    tuner = _tuner(kp=kp, ki=ki, td=td, deriv=deriv)
+    tuner = _tuner(kp=kp, ki=ki, td=td, deriv=deriv, cfg=cfg)
     sim = RoomSim(PlantParams(**plant_kw), R, c, ProxySettings(), y0=19.0,
                   tuner=tuner, autotune_module=A, seed=3)
     tr = sim.run(days * 24, sched)
@@ -692,9 +712,11 @@ def _evening_overshoot(tr, day):
 class TestClosedLoop:
     def test_learns_to_stop_overshoot(self):
         tuner, tr = _closed_loop(LIVING, 0.6, 0.002, days=7)
-        before = _evening_overshoot(tr, 0)
+        frozen = P.AutotuneConfig(min_interval_up_s=1e12, min_interval_down_s=1e12)
+        _, fixed = _closed_loop(LIVING, 0.6, 0.002, days=7, cfg=frozen)
+        before = _evening_overshoot(fixed, 6)       # same day, tuner held still
         after = _evening_overshoot(tr, 6)
-        assert before > 0.3
+        assert before > 0.35
         assert after < 0.25
         assert after < before - 0.15
         assert 0 < tuner.active_tuning().td_s <= P.AutotuneConfig().td_max_s

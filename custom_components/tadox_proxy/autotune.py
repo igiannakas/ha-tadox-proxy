@@ -327,10 +327,11 @@ def analyse_heatup(
     positive, or None if it never did.
 
     ``truncated`` means the schedule moved on before the room settled.  The
-    peak seen so far is then only a lower bound, so it is kept only when it
-    already shows too much overshoot (evidence for *more* braking is still
-    valid); the coast is dropped.  A cut-off episode can therefore never
-    argue for *less* braking.
+    peak seen so far is then only a lower bound, so the overshoot is kept
+    only when it already shows too much (evidence for *more* braking is
+    still valid), and the coast is reported as a lower bound (the tuner only
+    ever lets lower bounds *raise* the braking time).  A cut-off episode can
+    therefore never argue for *less* braking.
     """
     if len(samples) < 10:
         return None
@@ -389,7 +390,7 @@ def analyse_heatup(
         s_cross = theil_sen(pre) if len(pre) >= 5 else None
         y_cross = _median(ys[max(0, cross_index - 1):cross_index + 2])
         post_peak = max(ys[cross_index:])
-        if y_cross is not None and not truncated:
+        if y_cross is not None:
             coast_rise = max(0.0, post_peak - y_cross)
             if s_cross is not None and s_cross * 3600.0 >= cfg.rate_min_c_per_h:
                 coast_s = _clamp(coast_rise / s_cross, 0.0, 3 * cfg.td_max_s)
@@ -496,10 +497,15 @@ class _HeatupTracker:
         self._last_cycle_ts = start_ts
 
     def _stop(self, reason: str, ts: float) -> str:
-        """End early: keep the episode if the room had already been braked."""
+        """End early.  Keep what is valid: the rising phase (dead time, rate)
+        once it ran long enough, and the coast once the TRV had been told to
+        stop for a while.  Short schedule slots (e.g. 06:00-08:00 comfort)
+        are the norm, so discarding them would leave nothing to learn from."""
         self.abort_reason = reason
         if (self.cross_ts is not None
                 and ts - self.cross_ts >= self.cfg.truncated_min_after_cross_s):
+            return _TRUNCATED
+        if ts - self.start_ts >= self.cfg.truncated_min_duration_s:
             return _TRUNCATED
         return _ABORT
 
@@ -749,11 +755,18 @@ class Autotuner:
     # -- model ---------------------------------------------------------------
     def _model(self) -> dict[str, float | None]:
         hu = self._heatups
-        theta = _median([m.theta_s for m in hu if m.theta_s is not None])
+        thetas = [m.theta_s for m in hu if m.theta_s is not None and m.theta_s > 0]
+        # SIMC needs a dead time it can trust: one heat-up is not enough.
+        theta = _median(thetas) if len(thetas) >= self.cfg.simc_min_episodes else None
         rate = _median([m.rate_c_per_h for m in hu if m.rate_c_per_h is not None])
-        coast = _median([m.coast_s for m in hu if m.coast_s is not None])
+        complete = [m.coast_s for m in hu if m.coast_s is not None and not m.truncated]
+        bounds = [m.coast_s for m in hu if m.coast_s is not None and m.truncated]
+        # Complete episodes give the coast.  Cut-short ones only give a lower
+        # bound, used (as their maximum) until a complete one exists.
+        coast = _median(complete) if complete else (max(bounds) if bounds else None)
         tau_c = self.cfg.simc_lambda * theta if theta is not None else None
-        return {"theta_s": theta, "rate_c_per_h": rate, "coast_s": coast, "tau_c_s": tau_c}
+        return {"theta_s": theta, "rate_c_per_h": rate, "coast_s": coast,
+                "coast_is_lower_bound": not complete and bool(bounds), "tau_c_s": tau_c}
 
     def _simc_ki(self) -> float | None:
         """SIMC integral gain for the identified dead time (before trims)."""
@@ -780,6 +793,8 @@ class Autotuner:
         td_t = cur.td_s
         if self.derivative_allowed and m["coast_s"] is not None:
             td_t = _clamp(m["coast_s"] * self._trim["td_s"], 0.0, c.td_max_s)
+            if m["coast_is_lower_bound"]:
+                td_t = max(td_t, cur.td_s)    # a lower bound may only raise Td
             known = [h.overshoot_c for h in self._heatups if h.overshoot_c is not None]
             if len(known) >= 2 and max(known[-2:]) <= c.overshoot_target_c:
                 # Already on target: do not keep adding braking (it costs
