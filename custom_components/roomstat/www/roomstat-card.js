@@ -10,7 +10,7 @@
  *   entity: climate.living_room_thermostat
  *   name: Living Room          # optional, defaults to the area name
  *   icon: mdi:sofa             # optional, defaults to the area icon
- *   heating_entity: sensor.x   # optional, found automatically for Tado X
+ *   heating_entity: sensor.x   # optional, found automatically for Tado
  *
  * Served and registered by the roomstat integration; no resource to add.
  */
@@ -322,7 +322,7 @@ class RoomstatCard extends HTMLElement {
       computeLabel: (s) =>
         ({ entity: "Thermostat", name: "Name", icon: "Icon", heating_entity: "Heating % sensor (optional)" })[s.name],
       computeHelper: (s) =>
-        s.name === "heating_entity" ? "Found automatically for Tado X. Set it only if the % stays empty." : undefined,
+        s.name === "heating_entity" ? "Found automatically for Tado. Set it only if the % stays empty." : undefined,
     };
   }
 

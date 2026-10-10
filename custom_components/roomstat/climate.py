@@ -155,7 +155,7 @@ class RoomstatClimate(
     ClimateEntity,
     RestoreEntity,
 ):
-    """Proxy climate entity that controls a Tado X TRV via feedforward + PI."""
+    """Proxy climate entity that controls a Tado TRV via feedforward + PI."""
 
     _attr_has_entity_name = True
     _attr_temperature_unit = UnitOfTemperature.CELSIUS

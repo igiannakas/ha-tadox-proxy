@@ -3,14 +3,14 @@
     "step": {
       "user": {
         "title": "Roomstat",
-        "description": "Ein Eintrag steuert genau ein Tado X Heizkörperthermostat (TRV). Hat ein Raum mehrere Heizkörper, lege pro TRV einen Eintrag an und verweise alle auf denselben Raum-Temperatursensor.",
+        "description": "Ein Eintrag steuert genau ein Tado-Heizkörperthermostat (TRV). Hat ein Raum mehrere Heizkörper, lege pro TRV einen Eintrag an und verweise alle auf denselben Raum-Temperatursensor.",
         "data": {
-          "source_entity_id": "Tado X Heizkörperthermostat (TRV)",
+          "source_entity_id": "Tado-Heizkörperthermostat (TRV)",
           "external_temperature_entity_id": "Externer Temperatursensor",
           "name": "Name"
         },
         "data_description": {
-          "source_entity_id": "Die Climate-Entität des Thermostatkopfs am Heizkörper. Hier kein Wandthermostat auswählen. Jedes TRV kann nur von einem Eintrag verwendet werden.",
+          "source_entity_id": "Die Climate-Entität des Thermostatkopfs am Heizkörper. Hier kein Wandthermostat auswählen. Bei Tado V3+ die Entität aus der Integration HomeKit-Gerät wählen. Jedes TRV kann nur von einem Eintrag verwendet werden.",
           "external_temperature_entity_id": "Ein Temperatursensor im Raum, mit Abstand zum Heizkörper. Für alle Einträge desselben Raums denselben Sensor verwenden.",
           "name": "Name des Proxy-Thermostats. Pro Heizkörper einen sprechenden Namen wählen, zum Beispiel \"Lounge Fenster\" und \"Lounge Wand\", damit die Entitäten in Automationen wiederzufinden sind."
         }

@@ -3,9 +3,11 @@
 ## Project
 
 **Roomstat** (domain `roomstat`, repo `igiannakas/ha-roomstat`): a Home Assistant
-custom integration (HACS) that runs a proxy thermostat for each Tado X radiator
-thermostat (TRV). Feedforward + PI control on an external room sensor, a
-one-sided derivative brake, and background auto-tune.
+custom integration (HACS) that runs a proxy thermostat for each Tado radiator
+thermostat (TRV). The main target is Tado V3+, ideally through HA's HomeKit
+Device integration (local, no API quota); Tado X works too. Feedforward + PI
+control on an external room sensor, a one-sided derivative brake, and
+background auto-tune.
 
 Roomstat started as a fork of
 [kinimodb/ha-tadox-proxy](https://github.com/kinimodb/ha-tadox-proxy) (MIT).
@@ -87,8 +89,9 @@ Read this before changing `regulation.py` or `parameters.py`.
   target, and decays outside it, so a cold start never winds it up.
 - **Anti-windup:** no integration while the command is saturated, plus the
   deadband decay above. The integral is clamped to ±2 °C.
-- **Command clamp 5–25 °C.** Tado X via HomeKit and V3+ reject anything above
-  25. Clamp in the regulator, not at send time, so anti-windup stays honest.
+- **Command clamp 5–25 °C.** Tado V3+ rejects anything above 25 (upstream
+  sent up to 30, so V3+ rooms never heated). Clamp in the regulator, not at
+  send time, so anti-windup stays honest.
 - **Gain scheduling** (optional) scales Kp by error size. It adds little with
   Tado, because the valve is already fully open far from the target.
 - **One-sided brake:** `−(1 + Kp)·Td·max(0, slope)`, clamped to [−2, 0] °C, on

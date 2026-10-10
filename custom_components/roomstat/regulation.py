@@ -3,7 +3,7 @@ Feedforward + PI Regulation for Roomstat.
 
 Strategy
 --------
-Tado X thermostats have their own internal controller.  Instead of building
+Tado thermostats have their own internal controller.  Instead of building
 a second full PID that fights against it, we measure the *offset* between
 Tado's built-in sensor (sitting on the hot radiator) and an external room
 sensor, then use that offset as a **feedforward** term.  A small PI

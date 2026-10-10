@@ -5,8 +5,8 @@
 ![HA](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-41BDF5)
 
 Roomstat heats each room to the temperature measured by a sensor in the room,
-not the temperature at the radiator. It works with Tado X radiator thermostats
-in Home Assistant.
+not the temperature at the radiator. It works with Tado V3+ and Tado X radiator
+thermostats in Home Assistant.
 
 Roomstat is based on
 **[Tado X Proxy Thermostat](https://github.com/kinimodb/ha-tadox-proxy)** by
@@ -16,9 +16,13 @@ changes.
 
 ## What's different
 
-**Renamed**
-- New name and internal ID (`roomstat`). It does not take over existing
-  Tado X Proxy rooms. See [Moving from Tado X Proxy](#moving-from-tado-x-proxy).
+**Tado V3+**
+- **Works with Tado V3+ radiator thermostats**, not just Tado X. Connect them
+  through Home Assistant's **HomeKit Device** integration, paired with the Tado
+  Internet Bridge. That connection is local and fast, with no daily limit.
+- **Commands stay at 25 °C or below**, the highest value V3+ accepts. The
+  original sent up to 30 °C. V3+ refused those commands, so the room didn't
+  heat.
 
 **Control**
 - **Auto-tune.** Learns Kp, Ki and the braking time of each room in the
@@ -26,8 +30,6 @@ changes.
 - **Heat-up braking.** Stops heating a little before the room reaches its
   target, so the heat still in the radiator doesn't push it past. It can only
   ever reduce heating.
-- **Commands stop at 25 °C.** That's the highest value the Tado climate
-  entities accept. Higher values were refused, so the room didn't heat.
 
 **Modes**
 - **Schedule.** The room follows a helper that your scheduler sets. Manual
@@ -46,6 +48,10 @@ changes.
 **Dashboard**
 - A room card comes with the integration. See [Dashboard card](#dashboard-card).
 
+**Renamed**
+- New name and internal ID (`roomstat`). Rooms set up in Tado X Proxy aren't
+  taken over; add them again in Roomstat.
+
 **Removed**
 - The "Follow physical thermostat" switch and its two settings. If you turn
   the dial on the radiator, the next command from Roomstat overrides it.
@@ -56,21 +62,11 @@ changes.
    `https://github.com/igiannakas/ha-roomstat` as an **Integration**.
 2. Download **Roomstat** and restart Home Assistant.
 3. Go to **Settings → Devices & services → Add integration → Roomstat**.
-4. Pick the radiator thermostat, a temperature sensor in the room, and a name.
-   Add one entry per radiator thermostat.
+4. Pick the radiator thermostat (for V3+, the one from HomeKit Device), a
+   temperature sensor in the room, and a name. Add one entry per radiator
+   thermostat.
 
 Everything else is under **Configure** on each entry.
-
-## Moving from Tado X Proxy
-
-Roomstat and Tado X Proxy can't control the same radiator thermostat.
-
-1. Note each room's settings.
-2. Delete the room's Tado X Proxy entry.
-3. Add the room in Roomstat with **the same name**, so the entity IDs come back
-   unchanged. Then enter the settings again.
-4. In your dashboards, change `custom:tadox-room-card` to
-   `custom:roomstat-card`.
 
 ## Auto-tune
 
