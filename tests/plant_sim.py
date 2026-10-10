@@ -55,6 +55,7 @@ class PlantParams:
     valve_leak: float = 0.0           # valve never fully closes (fraction)
     sensor_noise_c: float = 0.01
     sensor_period_s: float = 30.0
+    sensor_resolution_c: float = 0.01  # reported step (many Zigbee sensors: 0.1)
     glitch_prob: float = 0.0          # chance per report of a wild reading
     glitch_size_c: float = 1.5
     extra_gain: Callable[[float], float] | None = None  # °C/h vs time (sun…)
@@ -148,6 +149,8 @@ class RoomSim:
         self.trv_sp = 5.0
         self.next_tado = 0.0
         self.sensor_value = round(y0, 2)
+        # Home Assistant's last_updated: changes only when the value changes.
+        self.sensor_ts = 0.0
         self.next_sensor = 0.0
         self.next_control = 0.0
         self.last_send = -1e9
@@ -186,7 +189,11 @@ class RoomSim:
         v = self.y_mix + self.rng.gauss(0.0, p.sensor_noise_c)
         if p.glitch_prob and self.rng.random() < p.glitch_prob:
             v += self.rng.choice((-1.0, 1.0)) * p.glitch_size_c
-        self.sensor_value = round(v, 2)
+        res = p.sensor_resolution_c
+        new = round(round(v / res) * res, 2)
+        if new != self.sensor_value:
+            self.sensor_ts = self.t
+        self.sensor_value = new
 
     # -- proxy -------------------------------------------------------------
     def _control_step(self, sp: float, sample_extra: dict | None) -> None:
@@ -197,7 +204,7 @@ class RoomSim:
 
         slope = None
         if self.slope is not None:
-            self.slope.add(self.t, room)
+            self.slope.add(self.t, room, self.sensor_ts)
             slope = self.slope.slope_c_per_s()
 
         if self.tuner is not None:
@@ -241,6 +248,7 @@ class RoomSim:
                 tado_setpoint_c=self.last_sent,
                 eligible=extra.get("eligible", True),
                 command_saturated=res.is_saturated,
+                room_temp_ts=self.sensor_ts,
             ))
 
         tr = self.trace

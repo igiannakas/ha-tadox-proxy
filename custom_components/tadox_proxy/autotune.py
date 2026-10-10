@@ -81,39 +81,85 @@ def _finite(*values: Any) -> bool:
     return all(isinstance(v, (int, float)) and math.isfinite(v) for v in values)
 
 
+class SpikeFilter:
+    """Rejects single wild sensor reports, per *report*, not per cycle.
+
+    The regulation cycle re-reads the room sensor every minute, so one bad
+    report can be seen on several cycles (until the sensor next reports a
+    different value).  A new report that jumps more than ``spike_c`` from the
+    last accepted value is held back and the last accepted value is used
+    instead; it is accepted once the next report confirms it (lands close to
+    it, or continues in the same direction), or after ``max_hold_s``.  A
+    genuine fast change is therefore delayed by one report at most.
+
+    ``report_ts`` is the sensor's own report time.  Home Assistant only
+    changes it when the value changes, which is exactly what "a new report"
+    means here.  Without it, every changed value counts as a new report.
+    """
+
+    def __init__(self, spike_c: float = 0.5, max_hold_s: float = 900.0) -> None:
+        self.spike_c = spike_c
+        self.max_hold_s = max_hold_s
+        self._accepted: float | None = None
+        self._pending: float | None = None
+        self._pending_since = 0.0
+        self._last_key: Any = None
+
+    def reset(self) -> None:
+        self._accepted = self._pending = self._last_key = None
+
+    def update(self, ts: float, value: float | None, report_ts: float | None = None) -> float | None:
+        if value is None or not _finite(value, ts):
+            return self._accepted
+        key = report_ts if _finite(report_ts) else value
+        if key == self._last_key:                 # same report, re-read
+            return self._accepted if self._pending is not None else value
+        self._last_key = key
+        acc = self._accepted
+        if acc is None or abs(value - acc) <= self.spike_c:
+            self._accepted, self._pending = value, None
+            return value
+        pend = self._pending
+        if pend is not None and (
+            abs(value - pend) <= self.spike_c                  # confirmed
+            or (value - acc) * (pend - acc) > 0 and abs(value - acc) >= abs(pend - acc)  # trend
+            or ts - self._pending_since >= self.max_hold_s     # never freeze
+        ):
+            self._accepted, self._pending = value, None
+            return value
+        self._pending, self._pending_since = value, ts if pend is None else self._pending_since
+        return acc
+
+
 class SlopeEstimator:
     """Theil-Sen slope of the room temperature over a sliding window.
 
-    The median of pairwise slopes ignores up to ~29 % wild readings, so a
-    single sensor glitch (seen in practice: 1.5 °C for one report) cannot
-    produce a large derivative.  Returns °C/s, or None while the window is
-    too short or after a data gap.
-
-    Pass the sensor's own report time as ``value_ts`` where known: the same
-    report re-read on several regulation cycles is then counted once, so a
-    glitch stays a single point and a slow-reporting sensor does not drag
-    the slope towards zero with repeated identical values.
+    One sample per regulation cycle.  A repeated (unchanged) reading is real
+    information – "no change at this resolution" – and pulls the slope
+    towards zero, which for a brake is the safe direction.  Wild reports are
+    removed by a :class:`SpikeFilter` first, and the median of pairwise
+    slopes then ignores up to ~29 % remaining outliers.  Returns °C/s, or
+    None while the window is too short or after a data gap.
     """
 
-    def __init__(self, window_s: float = 900.0, max_gap_s: float = 900.0,
-                 min_samples: int = 4) -> None:
+    def __init__(self, window_s: float = 900.0, max_gap_s: float = 300.0,
+                 min_samples: int = 6) -> None:
         self.window_s = window_s
         self.max_gap_s = max_gap_s
         self.min_samples = min_samples
         self._buf: deque[tuple[float, float]] = deque()
-        self._last_value_ts: float | None = None
+        self._spikes = SpikeFilter()
 
     def reset(self) -> None:
         self._buf.clear()
-        self._last_value_ts = None
+        self._spikes.reset()
 
     def add(self, ts: float, value: float | None, value_ts: float | None = None) -> None:
-        if value is None or not math.isfinite(value) or not math.isfinite(ts):
+        if not _finite(ts):
             return
-        if value_ts is not None and _finite(value_ts):
-            if value_ts == self._last_value_ts:
-                return
-            self._last_value_ts = value_ts
+        value = self._spikes.update(ts, value, value_ts)
+        if value is None:
+            return
         if self._buf and (ts - self._buf[-1][0] > self.max_gap_s or ts < self._buf[-1][0]):
             self._buf.clear()
         self._buf.append((ts, value))
@@ -275,7 +321,8 @@ def analyse_heatup(
 ) -> HeatupMetrics | None:
     """Extract dead time, heating rate, coast and overshoot from a heat-up.
 
-    ``samples`` are (ts, room_temp, demand), one per sensor report.
+    ``samples`` are (ts, room_temp, demand), one per regulation cycle, with
+    wild reports already removed by the tuner's :class:`SpikeFilter`.
     ``cross_ts`` is when the TRV demand first fell to <= 0 after having been
     positive, or None if it never did.
 
@@ -288,7 +335,7 @@ def analyse_heatup(
     if len(samples) < 10:
         return None
     ts = [s[0] for s in samples]
-    # 5-point running median: a glitch spanning up to two reports is removed.
+    # 5-point running median on top of the spike filter.
     ys = _median_filter([s[1] for s in samples], 5)
     cross_index = None
     if cross_ts is not None:
@@ -447,7 +494,6 @@ class _HeatupTracker:
         self.peak_ts = start_ts
         self.abort_reason = ""
         self._last_cycle_ts = start_ts
-        self._last_room_ts: float | None = None
 
     def _stop(self, reason: str, ts: float) -> str:
         """End early: keep the episode if the room had already been braked."""
@@ -472,10 +518,7 @@ class _HeatupTracker:
                 self.demand_was_positive = True
             elif d <= 0 and self.demand_was_positive and self.cross_ts is None:
                 self.cross_ts = s.ts
-        new_report = (s.room_temp_c is not None
-                      and (s.room_temp_ts is None or s.room_temp_ts != self._last_room_ts))
-        if new_report:
-            self._last_room_ts = s.room_temp_ts
+        if s.room_temp_c is not None:
             self.samples.append((s.ts, s.room_temp_c, d))
             tail = sorted(x[1] for x in self.samples[-5:])
             recent = tail[len(tail) // 2]
@@ -499,7 +542,6 @@ class _HoldTracker:
         self.samples: deque[tuple[float, float, float | None]] = deque()
         self.last_eval_ts = start_ts
         self._last_cycle_ts = start_ts
-        self._last_room_ts: float | None = None
 
     def clear(self, ts: float) -> None:
         """Start collecting fresh evidence (after a change or a verdict)."""
@@ -512,10 +554,7 @@ class _HoldTracker:
         if s.ts - self._last_cycle_ts > 600:
             return _ABORT
         self._last_cycle_ts = s.ts
-        if s.room_temp_c is not None and (
-            s.room_temp_ts is None or s.room_temp_ts != self._last_room_ts
-        ):
-            self._last_room_ts = s.room_temp_ts
+        if s.room_temp_c is not None:
             self.samples.append((s.ts, self.setpoint_c - s.room_temp_c, s.demand_c))
         while self.samples and s.ts - self.samples[0][0] > self.cfg.hold_buffer_s:
             self.samples.popleft()
@@ -593,6 +632,7 @@ class Autotuner:
         # Transient (not persisted): an episode in progress is dropped on restart.
         self._heatup: _HeatupTracker | None = None
         self._hold: _HoldTracker | None = None
+        self._spikes = SpikeFilter()
         self._prev_sp: float | None = None
         self._prev_ts: float | None = None
         self._prev_eligible = True
@@ -756,6 +796,8 @@ class Autotuner:
         event: str | None = None
         sp = s.setpoint_c if _finite(s.setpoint_c) else None
         room = s.room_temp_c if _finite(s.room_temp_c) else None
+        if room is not None:
+            room = self._spikes.update(s.ts, room, s.room_temp_ts)
         s = AutotuneSample(s.ts, sp, room, s.tado_internal_c, s.tado_setpoint_c,
                            s.eligible and sp is not None, s.command_saturated,
                            s.room_temp_ts if _finite(s.room_temp_ts) else None)
@@ -933,13 +975,22 @@ class Autotuner:
                 f"hold: oscillation ±{m.amplitude_c:.2f} °C"
                 + (f", period {m.period_s / 60:.0f} min" if m.period_s else "")
             )
-            if self._pending is not None and not self._pending["ref_osc"]:
-                return self._rollback(now, "oscillation appeared after the last change")
             emergency = m.amplitude_c >= c.emergency_amplitude_factor * c.osc_amplitude_c
+            rolled = None
+            if self._pending is not None and (emergency or not self._pending["ref_osc"]):
+                # A "more heat" change still on trial is undone before anything
+                # else: it is never accepted silently.
+                rolled = self._rollback(now, "oscillation after the last change")
+                if not emergency:
+                    return rolled
             if emergency:
+                # Cut from where the values actually are, so a trim that was
+                # raised but not yet applied cannot swallow the cut.
+                self._anchor_trims(only_down=True)
                 self._trim_by("kp", 0.85)
                 self._trim_by("ki", 0.7)
-            return self._maybe_update(now, "oscillation", emergency=emergency)
+            reason = self._maybe_update(now, "oscillation", emergency=emergency)
+            return reason or rolled
         self.last_event = f"hold: mean error {m.mean_error_c:+.2f} °C, no oscillation"
         # Only a room that stays too *cold* while heating, with no swinging
         # at all, argues for a faster integral.  A room that stays too warm is
@@ -1039,23 +1090,31 @@ class Autotuner:
         _LOGGER.info("Auto-tune update (%s)", self.last_update_reason)
         return self.last_update_reason
 
-    def _anchor_trims(self) -> None:
+    def _anchor_trims(self, only_down: bool = False) -> None:
         """Set the trims so the targets equal the current values.
 
         Used after a rollback: the evidence that pushed the failed move is
         neutralised, so nothing re-proposes it until new evidence arrives.
+        With ``only_down`` the Kp/Ki trims are only lowered (emergency) and
+        the Td trim is left alone.
         """
         b, cur, m = self._baseline, self._params, self._model()
+        anchored = dict(self._trim)
         if b.kp > 0:
-            self._trim["kp"] = cur.kp / b.kp
+            anchored["kp"] = cur.kp / b.kp
         if b.ki > 0:
             base = b.ki
             if m["theta_s"] is not None and m["theta_s"] > 0:
-                base = (1.0 + b.kp * self._trim["kp"]) / (4.0 * (m["tau_c_s"] + m["theta_s"]))
-            self._trim["ki"] = cur.ki / base
+                base = (1.0 + b.kp * anchored["kp"]) / (4.0 * (m["tau_c_s"] + m["theta_s"]))
+            anchored["ki"] = cur.ki / base
         if m["coast_s"]:
-            self._trim["td_s"] = cur.td_s / m["coast_s"]
+            anchored["td_s"] = cur.td_s / m["coast_s"]
         for name in self._trim:
+            if only_down:
+                if name != "td_s":
+                    self._trim[name] = min(self._trim[name], anchored[name])
+            else:
+                self._trim[name] = anchored[name]
             self._trim_by(name, 1.0)   # clamp into the trim bounds
 
     def _accept_pending(self) -> None:

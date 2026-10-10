@@ -65,6 +65,35 @@ def _hold(ts, *, mean=0.0, osc=False, amp=0.1, period=None, half=0, heating=0.5)
 # 1. Pieces
 # ---------------------------------------------------------------------------
 
+class TestSpikeFilter:
+    def test_single_report_spike_is_dropped_even_if_reread(self):
+        f = A.SpikeFilter()
+        assert f.update(0, 20.0, 0) == 20.0
+        # one wild report, re-read on three cycles (same report time)
+        for k in range(1, 4):
+            assert f.update(k * 60, 21.5, 60) == 20.0
+        assert f.update(240, 20.05, 240) == 20.05
+
+    def test_genuine_step_is_accepted_after_confirmation(self):
+        f = A.SpikeFilter()
+        f.update(0, 20.0, 0)
+        assert f.update(60, 21.0, 60) == 20.0     # held back once
+        assert f.update(120, 21.05, 120) == 21.05
+
+    def test_fast_trend_is_followed(self):
+        f = A.SpikeFilter()
+        f.update(0, 20.0, 0)
+        f.update(300, 20.6, 300)
+        assert f.update(600, 21.2, 600) == 21.2
+
+    def test_never_freezes(self):
+        f = A.SpikeFilter(max_hold_s=900)
+        f.update(0, 20.0, 0)
+        f.update(60, 25.0, 60)
+        f.update(120, 19.0, 120)                   # disagrees: still held
+        assert f.update(1200, 23.0, 1200) == 23.0  # held too long: accept
+
+
 class TestSlopeEstimator:
     def test_linear_ramp(self):
         est = A.SlopeEstimator()
@@ -92,13 +121,26 @@ class TestSlopeEstimator:
         est.add(12 * 60.0 + 900.0, 25.0)          # 15 min gap
         assert est.slope_c_per_s() is None
 
-    def test_rereads_of_one_report_count_once(self):
-        """A slow sensor re-read every cycle must not flatten the slope."""
+    def test_unchanged_value_decays_slope(self):
+        """A sensor that stops changing must not leave the brake engaged."""
         est = A.SlopeEstimator()
-        for k in range(30):                       # report every 5 min, read every 1 min
-            report = (k // 5) * 300.0
-            est.add(k * 60.0, 20.0 + report / 3600.0, value_ts=report)
-        assert est.slope_c_per_s() * 3600 == pytest.approx(1.0, rel=0.25)
+        t = 0.0
+        v = 19.0
+        for k in range(20):                       # 0.1 °C sensor rising at 2 °C/h
+            t = k * 60.0
+            v = round((19.0 + 2.0 * t / 3600) * 10) / 10
+            est.add(t, v)
+        assert est.slope_c_per_s() * 3600 > 1.0
+        for k in range(20, 40):                   # then flat
+            est.add(k * 60.0, v)
+        assert abs(est.slope_c_per_s() * 3600) < 0.2
+
+    def test_glitch_reread_over_several_cycles(self):
+        est = A.SlopeEstimator()
+        for k in range(15):
+            wild = 6 <= k <= 9                    # one report seen on 4 cycles
+            est.add(k * 60.0, 21.5 if wild else 20.0, 360.0 if wild else k * 60.0)
+        assert abs(est.slope_c_per_s() * 3600) < 0.05
 
     def test_rejects_non_finite(self):
         est = A.SlopeEstimator()
@@ -334,6 +376,7 @@ class TestSafety:
                    td=rng.choice([0.0, 600.0]), deriv=rng.random() < 0.8)
         c = t.cfg
         now = 0.0
+        rollbacks = 0
         for _ in range(300):
             now += rng.uniform(600, 12 * 3600)
             t._now = now
@@ -352,7 +395,10 @@ class TestSafety:
                                           half=rng.randint(0, 8), heating=rng.random()), now)
             after = t.active_tuning()
             _within_bounds(t)
-            if reason and reason.startswith("rolled back"):
+            if t.summary()["rollbacks"] != rollbacks:
+                # A rollback restores the previous values (and an emergency
+                # may then take one step from there): exempt from step limits.
+                rollbacks = t.summary()["rollbacks"]
                 continue
             if after.kp != before.kp:
                 assert before.kp * c.kp_step_down - 1e-12 <= after.kp <= before.kp * c.kp_step_up + 1e-12
@@ -669,6 +715,24 @@ class TestClosedLoop:
         assert p2p(5, 7) < 0.6
         a = tuner.active_tuning()
         assert a.kp < 1.2 and a.ki < 0.003
+
+    @pytest.mark.parametrize("period", [30.0, 300.0])
+    def test_coarse_sensor_still_calms_oscillation(self, period):
+        """0.1 °C sensor whose HA timestamp only changes with the value."""
+        plant = dict(LIVING, tado_ti_min=2000, tado_kp=1.5, water_delay_min=8,
+                     mix_lag_min=6, sensor_resolution_c=0.1, sensor_period_s=period)
+        flat = schedule_from([(0, 20.0)])
+        tuner, tr = _closed_loop(plant, 1.2, 0.003, days=7, sched=flat)
+        idx = tr.window(5 * DAY, 7 * DAY)
+        e = [tr.sp[i] - tr.y_true[i] for i in idx]
+        assert max(e) - min(e) < 0.7
+        assert tuner.summary()["holds_analysed"] > 5
+
+    def test_coarse_sensor_still_learns_braking(self):
+        plant = dict(LIVING, sensor_resolution_c=0.1, sensor_period_s=300.0)
+        tuner, tr = _closed_loop(plant, 0.6, 0.002, days=7)
+        assert tuner.active_tuning().td_s >= 600
+        assert _evening_overshoot(tr, 6) < 0.35
 
     def test_does_nothing_without_episodes(self):
         """A room held at a steady temperature with no swings is left alone."""

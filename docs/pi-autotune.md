@@ -177,10 +177,14 @@ demand was still positive the room is under-powered: a cold day or a small
 radiator. More gain would not help, so the episode is not evidence. A stall
 with a *manual* braking time (learning off) never raises Kp either.
 
-**Each sensor report counts once.** The coordinator re-reads the room sensor
-every cycle. The slope and the episode analysis use the sensor's own report
-time, so a slow sensor or a glitch is not counted several times. On top of
-that, a 5-point running median removes glitches spanning up to two reports.
+**Glitches are rejected per report.** The coordinator re-reads the room
+sensor every cycle, so one bad report can show up on several cycles. A
+spike filter keyed on the sensor's own report time rejects a report that
+jumps more than 0.5 °C, until the next report confirms it. A genuine change
+is delayed by one report at most. Samples stay one per cycle. An unchanged
+reading from a coarse (0.1 °C) sensor therefore counts as "no change", which
+decays the brake rather than freezing it. A 5-point running median sits on
+top of the filter.
 
 ### How values move
 
@@ -262,11 +266,13 @@ Each item is covered by a test in `tests/test_autotune.py` or
    raise overshoot or start an oscillation, so a sunny afternoon right after
    one must not be able to undo it.
 7. **Emergency detune.** A swing of ±0.3 °C or more cuts Kp and Ki at once,
-   bypassing the rate limit, and never reduces braking.
-8. **Robust measurements.** Each sensor report counts once, with median
-   filters, Theil–Sen slopes, plausibility windows (θ 3–60 min,
-   rate 0.2–10 °C/h) and minimum step sizes. Glitches are discarded rather
-   than learned from.
+   bypassing the rate limit, and never reduces braking. Any "more heat"
+   change still on trial is rolled back first.
+8. **Robust measurements.** A per-report spike filter, median filters,
+   Theil–Sen slopes, plausibility windows (θ 3–60 min, rate 0.2–10 °C/h) and
+   minimum step sizes. Glitches are discarded rather than learned from.
+   Tested with 0.01 °C and 0.1 °C sensors reporting every 30 s and every
+   5 min.
 9. **The brake cannot add heat.** It is one-sided and clamped by
    construction (`regulation.py`).
 10. **Existing guards unchanged.** The integral deadband, decay, ±2 °C

@@ -367,6 +367,7 @@ class TadoXProxyClimate(
         except Exception:  # noqa: BLE001 - diagnostics must never break state writes
             _LOGGER.exception("%s: auto-tune summary failed", self._config_entry.title)
             self._autotune_failed = True
+            self._apply_active_tuning()     # fall back to the configured values
             return {"status": STATUS_DISABLED, "error": "auto-tune failed, see log"}
         if not self._autotune_enabled or self._autotune_failed:
             summary["status"] = STATUS_DISABLED
