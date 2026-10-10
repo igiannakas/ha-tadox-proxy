@@ -77,20 +77,34 @@ class TestSpikeFilter:
     def test_genuine_step_is_accepted_after_confirmation(self):
         f = A.SpikeFilter()
         f.update(0, 20.0, 0)
-        assert f.update(60, 21.0, 60) == 20.0     # held back once
-        assert f.update(120, 21.05, 120) == 21.05
+        assert f.update(60, 21.2, 60) == 20.0     # held back once
+        assert f.update(120, 21.25, 120) == 21.25
 
     def test_fast_trend_is_followed(self):
         f = A.SpikeFilter()
         f.update(0, 20.0, 0)
-        f.update(300, 20.6, 300)
-        assert f.update(600, 21.2, 600) == 21.2
+        f.update(300, 21.1, 300)
+        assert f.update(600, 22.2, 600) == 22.2
+
+    def test_steady_room_after_genuine_jump_is_not_held(self):
+        """HA sends no new report while the value is steady."""
+        f = A.SpikeFilter()
+        f.update(0, 20.0, 0)
+        assert f.update(60, 18.8, 60) == 20.0          # held once
+        for k in range(2, 20):                         # same report re-read
+            v = f.update(k * 60, 18.8, 60)
+        assert v == 18.8
+
+    def test_aqara_style_half_degree_reports_pass(self):
+        f = A.SpikeFilter()
+        f.update(0, 20.0, 0)
+        assert f.update(600, 20.55, 600) == 20.55
 
     def test_never_freezes(self):
         f = A.SpikeFilter(max_hold_s=900)
         f.update(0, 20.0, 0)
         f.update(60, 25.0, 60)
-        f.update(120, 19.0, 120)                   # disagrees: still held
+        f.update(120, 18.5, 120)                   # disagrees: still held
         assert f.update(1200, 23.0, 1200) == 23.0  # held too long: accept
 
 
@@ -140,6 +154,15 @@ class TestSlopeEstimator:
         for k in range(15):
             wild = 6 <= k <= 9                    # one report seen on 4 cycles
             est.add(k * 60.0, 21.5 if wild else 20.0, 360.0 if wild else k * 60.0)
+        assert abs(est.slope_c_per_s() * 3600) < 0.05
+
+    def test_glitch_spanning_two_reports_is_bounded(self):
+        """Two wild reports in a row get through the spike filter, but the
+        Theil-Sen median keeps the brake's slope small."""
+        est = A.SlopeEstimator()
+        for k in range(15):
+            wild = k in (6, 7)
+            est.add(k * 60.0, 21.5 if wild else 20.0, k * 60.0)
         assert abs(est.slope_c_per_s() * 3600) < 0.05
 
     def test_rejects_non_finite(self):
@@ -453,12 +476,26 @@ class TestSafety:
         t._maybe_update(3 * DAY, "test")
         assert t.active_tuning().td_s >= td1
 
-    def test_complete_coast_beats_lower_bounds(self):
+    def test_lower_bounds_below_complete_median_are_ignored(self):
         t = _tuner()
-        t._heatups = [_heatup(DAY, 0.6, coast=3000, truncated=True),
+        t._heatups = [_heatup(DAY, 0.6, coast=600, truncated=True),
                       _heatup(2 * DAY, 0.6, coast=1200)]
         assert t._model()["coast_s"] == 1200
         assert not t._model()["coast_is_lower_bound"]
+
+    def test_lower_bounds_above_complete_median_count(self):
+        t = _tuner()
+        t._heatups = [_heatup(DAY, 0.6, coast=2400, truncated=True),
+                      _heatup(2 * DAY, 0.6, coast=2400, truncated=True),
+                      _heatup(3 * DAY, 0.6, coast=600)]
+        assert t._model()["coast_s"] == 2400
+
+    def test_cut_short_in_dead_time_gives_no_dead_time(self):
+        s, _ = _synthetic_heatup(theta_min=40.0, rate=2.4, y0=18.0)
+        cut = [x for x in s if x[0] <= 46 * 60]
+        m = A.analyse_heatup(cut, start_ts=0.0, setpoint_c=20.0, cfg=CFG,
+                             cross_ts=None, tuning=A.Tuning(0.6, 0.002), truncated=True)
+        assert m is None or m.theta_s is None
 
     def test_rollback_on_worse_overshoot(self):
         t = _tuner(deriv=False)

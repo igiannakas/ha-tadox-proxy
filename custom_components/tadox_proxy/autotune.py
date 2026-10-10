@@ -97,7 +97,7 @@ class SpikeFilter:
     means here.  Without it, every changed value counts as a new report.
     """
 
-    def __init__(self, spike_c: float = 0.5, max_hold_s: float = 900.0) -> None:
+    def __init__(self, spike_c: float = 1.0, max_hold_s: float = 900.0) -> None:
         self.spike_c = spike_c
         self.max_hold_s = max_hold_s
         self._accepted: float | None = None
@@ -113,7 +113,13 @@ class SpikeFilter:
             return self._accepted
         key = report_ts if _finite(report_ts) else value
         if key == self._last_key:                 # same report, re-read
-            return self._accepted if self._pending is not None else value
+            if self._pending is None:
+                return value
+            if ts - self._pending_since >= self.max_hold_s:
+                # The held report has stood unchallenged for long enough:
+                # a steady room produces no new report, so accept it.
+                self._accepted, self._pending = self._pending, None
+            return self._accepted
         self._last_key = key
         acc = self._accepted
         if acc is None or abs(value - acc) <= self.spike_c:
@@ -369,7 +375,18 @@ def analyse_heatup(
 
     step = setpoint_c - y0
     theta = rate = None
-    if best is not None and best[0] > 0 and step >= cfg.rate_min_step_c:
+    rising_done = True
+    if truncated and cross_index is None and best is not None:
+        # Cut short before the TRV was told to stop: the steepest rise may
+        # still be ahead.  Only trust the tangent if the room had clearly
+        # passed it (slope at the end well below the maximum).
+        tail = [(t, y) for t, y in zip(ts, ys) if end_ts - t <= win]
+        tail_slope = theil_sen(tail) if len(tail) >= 5 else None
+        rising_done = (
+            best[1] <= end_ts - 900.0
+            and tail_slope is not None and tail_slope < 0.7 * best[0]
+        )
+    if best is not None and best[0] > 0 and step >= cfg.rate_min_step_c and rising_done:
         sl, tc, yc = best
         rate_h = sl * 3600.0
         if cfg.rate_min_c_per_h <= rate_h <= cfg.rate_max_c_per_h:
@@ -762,8 +779,14 @@ class Autotuner:
         complete = [m.coast_s for m in hu if m.coast_s is not None and not m.truncated]
         bounds = [m.coast_s for m in hu if m.coast_s is not None and m.truncated]
         # Complete episodes give the coast.  Cut-short ones only give a lower
-        # bound, used (as their maximum) until a complete one exists.
-        coast = _median(complete) if complete else (max(bounds) if bounds else None)
+        # bound: used (as their maximum) until a complete one exists, and
+        # after that only when it exceeds the complete median (a bound below
+        # it says nothing new; one above it is real evidence of more coast).
+        if complete:
+            mid = _median(complete)
+            coast = _median(complete + [b for b in bounds if b > mid])
+        else:
+            coast = max(bounds) if bounds else None
         tau_c = self.cfg.simc_lambda * theta if theta is not None else None
         return {"theta_s": theta, "rate_c_per_h": rate, "coast_s": coast,
                 "coast_is_lower_bound": not complete and bool(bounds), "tau_c_s": tau_c}
