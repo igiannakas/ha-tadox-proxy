@@ -168,6 +168,12 @@ satisfied with both heat-up speed and steady-state stability, you can disable ad
 scheduling in the options flow under "Gain Scheduling". The base Kp value will then be
 used unchanged.
 
+**With auto-tune, gain scheduling adds almost nothing.** Far from target the Tado
+valve is already fully open, so asking harder does not heat faster. Near target the
+multiplier is 1.0 anyway. In simulation, switching it off left heat-up times and
+overshoot unchanged (including a 4 °C winter heat-up) and saved about 5 % of commands.
+Turning it off keeps one fewer moving part; it does not restart auto-tune learning.
+
 ### Configurable Parameters (Options → PI Controller)
 
 These parameters can be adjusted in the options flow under "PI Controller":

@@ -65,7 +65,7 @@ Each entry creates:
 | `binary_sensor.<name>_sensor_degraded` | Turns on when your room sensor stops reporting |
 | `switch.<name>_follow_physical_thermostat` | Off by default, see [below](#following-the-physical-thermostat) |
 | `sensor.<name>_kp_in_use`, `_ki_in_use`, `_braking_time_in_use` | The controller values in use right now, learned or yours. Kept in long-term history |
-| `sensor.<name>_auto_tune_status` | Disabled, Learning, Tuning or Frozen. The attributes show what it measured and why it last changed something |
+| `sensor.<name>_auto_tune_status` | Disabled, Learning or Tuning. The attributes show what it measured and why it last changed something |
 | `sensor.<name>_room_dead_time`, `_radiator_coast_time`, `_heat_up_rate`, `_last_heat_up_overshoot` | What auto-tune has learned about the room. Unavailable while auto-tune is off |
 | `button.<name>_reset_auto_tune` | Forget what auto-tune learned and go back to your values |
 
@@ -297,8 +297,9 @@ How it behaves:
   warms and how long the radiator keeps heating after Tado is told to stop. Expect
   the first changes after a day or two, and settled values after about a week.
 - **Small steps, checked.** Values move a little at a time, at most every few
-  hours. After each change it compares the next heat-up with the ones before. If
-  things got worse, it puts the old values back and pauses for three days.
+  hours. After a change that adds heat, it compares the next heat-ups with the
+  ones before. If things got worse, it puts the old values back and carries on.
+  It may try again later, but only when new heat-ups call for it.
 - **Nothing is learned from unusual periods**: open windows, away, boost, summer
   mode, heating off, or a missing sensor.
 - **Changing Kp, Ki or the braking time yourself restarts learning** from your new
@@ -365,7 +366,7 @@ something is wrong or when you are curious what the integration is thinking.
 | `target_for_tado_c` | The number actually sent to the Tado |
 | `correction_kp` / `correction_ki` | The gains currently in effect |
 | `correction_td_min` | The braking time currently in effect, in minutes |
-| `autotune_status` | Auto-tune: disabled, learning, tuning or frozen |
+| `autotune_status` | Auto-tune: disabled, learning or tuning |
 | `window_open_active` | Window detection has taken over |
 | `window_close_delay_active` | Waiting after a window closed |
 | `presence_away_active` | Presence detection has taken over |

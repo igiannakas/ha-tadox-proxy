@@ -285,12 +285,21 @@ Each item is covered by a test in `tests/test_autotune.py` or
    enough for a gentler move.
 6. **Watchdog on "more heat" changes.** After such a change, the next two
    heat-ups are compared with the two before it. If overshoot rose by
-   > 0.2 °C, or a new oscillation appears, the change is rolled back:
-   - the old values are restored and the tuner pauses for 3 days;
-   - that one move is not retried for 30 days. Gentler moves on the same
-     value stay possible;
-   - the trims are re-anchored to the restored values, so the old evidence
-     cannot push the same move again.
+   > 0.2 °C, or a new oscillation appears, the change is rolled back. The
+   old values are restored and tuning simply carries on: no freeze, and
+   nothing is blocked. The tuner may try the same kind of move again, but
+   only when:
+   - **fresh evidence calls for it.** The trims are re-anchored to the
+     restored values and the votes are cleared, so the evidence that pushed
+     the failed move doesn't count again;
+   - **the normal rate limit has passed,** counted from the rollback: 12 h
+     for "more heat", 3 h for gentler moves.
+
+   A retry is on trial again like any other "more heat" change. So a move
+   that keeps failing costs at most one small step on two heat-ups per
+   attempt, and attempts can't come faster than the votes and rate limits
+   allow. In simulation with strong sun (up to +2 °C/h on 40 % of
+   afternoons), 1 of 48 two-week runs rolled anything back.
 
    Gentler changes are *not* put on trial. More braking or lower gain cannot
    raise overshoot or start an oscillation, so a sunny afternoon right after
@@ -311,8 +320,7 @@ Each item is covered by a test in `tests/test_autotune.py` or
     never written to the config entry (which would reload the integration).
     Changing Kp, Ki or the braking time in the options restarts learning from
     the new values. Switching auto-tune off reverts to the configured values
-    immediately. *Reset auto-tune* does the same and starts over. Both clear
-    any blocked moves.
+    immediately. *Reset auto-tune* does the same and starts over.
 12. **The tuner can never stop heating control.** Any exception inside it
     switches it off until restart. The configured values take over, and the
     command for that cycle has already been sent.
@@ -350,7 +358,7 @@ every step except an explicit rollback.
 | `sensor.<name>_kp_in_use` | Kp the regulator uses now (learned or configured). Attributes: `configured`, `source` |
 | `sensor.<name>_ki_in_use` | Ki in use |
 | `sensor.<name>_braking_time_in_use` | Td in use, minutes |
-| `sensor.<name>_auto_tune_status` | `disabled` / `learning` / `tuning` / `frozen`. Attributes carry the full summary: model, SIMC numbers, last change, last event, counters |
+| `sensor.<name>_auto_tune_status` | `disabled` / `learning` / `tuning`. Attributes carry the full summary: model, SIMC numbers, last change (including rollbacks), last event, counters |
 | `sensor.<name>_room_dead_time` | Learned θ, minutes |
 | `sensor.<name>_radiator_coast_time` | Learned coast, minutes |
 | `sensor.<name>_heat_up_rate` | Learned heating rate, °C/h |
