@@ -1,7 +1,7 @@
 {
   "domain": "roomstat",
   "name": "Roomstat",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "config_flow": true,
   "dependencies": ["frontend", "http", "lovelace"],
   "platforms": ["binary_sensor", "button", "climate", "number", "sensor"],
