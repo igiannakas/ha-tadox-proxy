@@ -86,12 +86,26 @@
             "data": {
               "correction_kp": "Proportionale Korrektur (Kp)",
               "correction_ki": "Integrale Korrektur (Ki)",
-              "integral_deadband_c": "Integral-Präzisionszone"
+              "integral_deadband_c": "Integral-Präzisionszone",
+              "derivative_time_min": "Bremszeit beim Aufheizen (D-Anteil)"
             },
             "data_description": {
               "correction_kp": "Proportionalanteil des PI-Reglers. Höhere Werte reagieren schneller auf Temperaturabweichungen.",
               "correction_ki": "Integralanteil des PI-Reglers. Höhere Werte korrigieren anhaltende Abweichungen aggressiver.",
-              "integral_deadband_c": "Integral sammelt nur innerhalb dieser Zone. Verhindert Überschwingen bei großen Temperaturänderungen."
+              "integral_deadband_c": "Integral sammelt nur innerhalb dieser Zone. Verhindert Überschwingen bei großen Temperaturänderungen.",
+              "derivative_time_min": "0 = aus. Senkt den Sollwert, solange der Raum wärmer wird, damit der Heizkörper vor dem Erreichen des Ziels abschaltet statt danach. Kann die Heizleistung nur verringern. Typisch 15–35 min. Wenn die Selbstoptimierung die Bremszeit lernt, ist dies nur der Startwert."
+            }
+          },
+          "autotune": {
+            "name": "Selbstoptimierung",
+            "description": "Lernt Kp, Ki und die Bremszeit für diesen Raum im Hintergrund aus alltäglichen Aufheizvorgängen. Die Werte oben sind der Startpunkt; gelernte Werte bleiben in sicheren Grenzen darum herum.",
+            "data": {
+              "autotune_enabled": "Selbstoptimierung aktivieren",
+              "autotune_derivative": "Bremsen beim Aufheizen lernen"
+            },
+            "data_description": {
+              "autotune_enabled": "Passt den Regler in kleinen Schritten an und macht jede Änderung rückgängig, die das Ergebnis verschlechtert. Eine Änderung von Kp, Ki oder Bremszeit oben startet das Lernen neu.",
+              "autotune_derivative": "Lernt auch, wie früh vor dem Ziel das Heizen enden soll – daraus, wie lange der Heizkörper nach dem Stopp-Befehl an Tado weiterheizt. Empfohlen."
             }
           },
           "gain_scheduling": {
@@ -198,11 +212,44 @@
       },
       "schedule_override_remaining": {
         "name": "Zeitplan-Übersteuerung verbleibend"
+      },
+      "pi_kp": {
+        "name": "Aktives Kp"
+      },
+      "pi_ki": {
+        "name": "Aktives Ki"
+      },
+      "pi_td": {
+        "name": "Aktive Bremszeit"
+      },
+      "autotune_status": {
+        "name": "Status Selbstoptimierung",
+        "state": {
+          "disabled": "Deaktiviert",
+          "learning": "Lernt",
+          "tuning": "Optimiert",
+          "frozen": "Eingefroren"
+        }
+      },
+      "autotune_dead_time": {
+        "name": "Totzeit des Raums"
+      },
+      "autotune_coast_time": {
+        "name": "Nachheizzeit des Heizkörpers"
+      },
+      "autotune_heating_rate": {
+        "name": "Aufheizrate"
+      },
+      "autotune_last_overshoot": {
+        "name": "Letztes Überschwingen"
       }
     },
     "button": {
       "resume_schedule": {
         "name": "Zeitplan fortsetzen"
+      },
+      "reset_autotune": {
+        "name": "Selbstoptimierung zurücksetzen"
       }
     },
     "binary_sensor": {

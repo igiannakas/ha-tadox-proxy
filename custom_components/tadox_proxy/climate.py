@@ -37,6 +37,12 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .autotune import (
+    STATUS_DISABLED,
+    Autotuner,
+    SlopeEstimator,
+    Tuning,
+)
 from .climate_controllers import (
     STARTUP_ARM_OPEN,
     STARTUP_RESTORE,
@@ -56,11 +62,14 @@ from .climate_regulation import RegulationMixin
 from .climate_schedule import ScheduleMixin
 from .climate_summer import SummerMixin
 from .const import (
+    CONF_AUTOTUNE_DERIVATIVE,
+    CONF_AUTOTUNE_ENABLED,
     CONF_AWAY_TARGET,
     CONF_BOOST_DURATION,
     CONF_BOOST_TARGET,
     CONF_CORRECTION_KI,
     CONF_CORRECTION_KP,
+    CONF_DERIVATIVE_TIME_MIN,
     CONF_ECO_TARGET,
     CONF_FOLLOW_GRACE_S,
     CONF_FOLLOW_TADO_INPUT,
@@ -92,6 +101,7 @@ from .const import (
 from .parameters import (
     DEFAULT_CONTROL_INTERVAL_S,
     DEFAULT_SENSOR_GRACE_S,
+    AutotuneConfig,
     BehaviourConfig,
     CorrectionTuning,
     PresetConfig,
@@ -103,14 +113,25 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class _AutomationExtraData(ExtraStoredData):
-    """RestoreEntity wrapper around the HA-free PersistedAutomationState."""
+    """RestoreEntity wrapper around the HA-free PersistedAutomationState.
 
-    def __init__(self, state: PersistedAutomationState) -> None:
+    The auto-tuner's learned state rides along under the ``autotune`` key,
+    so learned values survive restarts and config-entry reloads without
+    ever being written to the config entry (which would trigger a reload).
+    """
+
+    def __init__(
+        self, state: PersistedAutomationState, autotune: dict[str, Any] | None = None
+    ) -> None:
         self._state = state
+        self._autotune = autotune
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-safe dict for the restore-state store."""
-        return self._state.as_dict()
+        data = self._state.as_dict()
+        if self._autotune is not None:
+            data["autotune"] = self._autotune
+        return data
 
 
 async def async_setup_entry(
@@ -183,6 +204,24 @@ class TadoXProxyClimate(
         self._regulator = FeedforwardPiRegulator(self._config)
         self._reg_state = RegulationState()
 
+        # Background auto-tune.  The configured Kp/Ki/Td are the baseline the
+        # tuner starts from and is bounded around; learned values live only
+        # in the restore-state data (see _AutomationExtraData).
+        self._autotune_enabled: bool = bool(
+            config_entry.options.get(CONF_AUTOTUNE_ENABLED, False)
+        )
+        self._autotuner = Autotuner(
+            AutotuneConfig(),
+            self._configured_tuning(),
+            derivative_allowed=bool(
+                config_entry.options.get(CONF_AUTOTUNE_DERIVATIVE, True)
+            ),
+        )
+        self._slope = SlopeEstimator()
+        # Set if the tuner ever raises: it is then ignored until restart.
+        self._autotune_failed = False
+        self._apply_active_tuning()
+
         # UI state
         self._hvac_mode = HVACMode.HEAT
         self._target_temp: float = self._comfort_target()
@@ -242,7 +281,8 @@ class TadoXProxyClimate(
         if opts:
             kp = opts.get(CONF_CORRECTION_KP, config.tuning.kp)
             ki = opts.get(CONF_CORRECTION_KI, config.tuning.ki)
-            config.tuning = CorrectionTuning(kp=kp, ki=ki)
+            td_s = float(opts.get(CONF_DERIVATIVE_TIME_MIN, 0) or 0) * 60.0
+            config.tuning = CorrectionTuning(kp=kp, ki=ki, td_s=td_s)
             config.presets = PresetConfig(
                 eco_target_c=opts.get(CONF_ECO_TARGET, config.presets.eco_target_c),
                 boost_target_c=opts.get(CONF_BOOST_TARGET, config.presets.boost_target_c),
@@ -283,6 +323,63 @@ class TadoXProxyClimate(
             )
         return config
 
+    def _configured_tuning(self) -> Tuning:
+        """The Kp/Ki/Td from the options (the auto-tuner's baseline).
+
+        Read from the options, not from ``self._config``, because
+        ``_apply_active_tuning`` replaces ``self._config.tuning`` with the
+        learned values.
+        """
+        t = self._build_config(self._config_entry).tuning
+        return Tuning(float(t.kp), float(t.ki), float(t.td_s))
+
+    def _apply_active_tuning(self) -> None:
+        """Point the regulator at the learned (or configured) values."""
+        if self._autotune_enabled and not self._autotune_failed:
+            active = self._autotuner.active_tuning()
+        else:
+            active = self._configured_tuning()
+        self._config.tuning = CorrectionTuning(
+            kp=active.kp, ki=active.ki, td_s=active.td_s
+        )
+        self._regulator.cfg = self._config
+
+    @property
+    def autotune_enabled(self) -> bool:
+        """True when the background auto-tune is switched on."""
+        return self._autotune_enabled
+
+    @property
+    def active_tuning(self) -> Tuning:
+        """The Kp / Ki / Td the regulator is using right now."""
+        t = self._config.tuning
+        return Tuning(t.kp, t.ki, t.td_s)
+
+    @property
+    def configured_tuning(self) -> Tuning:
+        """The Kp / Ki / Td from the options."""
+        return self._autotuner.baseline
+
+    def autotune_summary(self) -> dict[str, Any]:
+        """Diagnostic snapshot of the auto-tuner (status 'disabled' when off)."""
+        try:
+            summary = self._autotuner.summary(now=time.time())
+        except Exception:  # noqa: BLE001 - diagnostics must never break state writes
+            _LOGGER.exception("%s: auto-tune summary failed", self._config_entry.title)
+            self._autotune_failed = True
+            self._apply_active_tuning()     # fall back to the configured values
+            return {"status": STATUS_DISABLED, "error": "auto-tune failed, see log"}
+        if not self._autotune_enabled or self._autotune_failed:
+            summary["status"] = STATUS_DISABLED
+        return summary
+
+    async def async_reset_autotune(self) -> None:
+        """Forget learned values and return to the configured ones."""
+        self._autotuner.reset()
+        self._apply_active_tuning()
+        _LOGGER.info("%s: auto-tune reset to configured values", self._config_entry.title)
+        self._write_state_with_binary_sensor()
+
     @staticmethod
     def _build_behaviour(entry: ConfigEntry) -> BehaviourConfig:
         """Build behaviour config, applying options over defaults."""
@@ -319,7 +416,11 @@ class TadoXProxyClimate(
         persisted: PersistedAutomationState | None = None
         extra = await self.async_get_last_extra_data()
         if extra is not None:
-            persisted = PersistedAutomationState.from_dict(extra.as_dict())
+            extra_dict = extra.as_dict()
+            persisted = PersistedAutomationState.from_dict(extra_dict)
+            if isinstance(extra_dict, dict):
+                self._autotuner.restore(extra_dict.get("autotune"))
+                self._apply_active_tuning()
 
         if last_state:
             if last_state.state in (HVACMode.HEAT, HVACMode.OFF):
@@ -551,8 +652,10 @@ class TadoXProxyClimate(
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData:
-        """Persist automation state so restart/reload can re-arm it."""
-        return _AutomationExtraData(self._automation_snapshot())
+        """Persist automation and auto-tune state across restart/reload."""
+        return _AutomationExtraData(
+            self._automation_snapshot(), self._autotuner.as_dict()
+        )
 
     def _automation_snapshot(self) -> PersistedAutomationState:
         """Capture window / presence / boost automation state."""
@@ -597,7 +700,12 @@ class TadoXProxyClimate(
         self.__dict__.pop("min_temp", None)
         self.__dict__.pop("max_temp", None)
         self._behaviour = self._build_behaviour(entry)
-        self._regulator.cfg = self._config
+        self._autotune_enabled = bool(entry.options.get(CONF_AUTOTUNE_ENABLED, False))
+        self._autotuner.set_baseline(
+            self._configured_tuning(),
+            bool(entry.options.get(CONF_AUTOTUNE_DERIVATIVE, True)),
+        )
+        self._apply_active_tuning()
         self._sensor_grace_s = entry.options.get(
             CONF_SENSOR_GRACE_S, DEFAULT_SENSOR_GRACE_S
         )
@@ -879,6 +987,8 @@ class TadoXProxyClimate(
             "tado_internal_temp_c": self.coordinator.data.get("tado_internal_temp"),
             "correction_kp": self._config.tuning.kp,
             "correction_ki": self._config.tuning.ki,
+            "correction_td_min": round(self._config.tuning.td_s / 60.0, 1),
+            "autotune_status": self.autotune_summary()["status"],
             "effective_setpoint_c": self._effective_setpoint(),
             "window_open_active": self._window_ctrl.is_active,
             "window_close_delay_active": self._window_ctrl.close_delay_active,
@@ -906,6 +1016,7 @@ class TadoXProxyClimate(
                 "feedforward_offset_c": r.feedforward_offset_c,
                 "p_correction_c": r.p_correction_c,
                 "i_correction_c": r.i_correction_c,
+                "d_correction_c": r.d_correction_c,
                 "error_c": r.error_c,
                 "target_for_tado_c": r.target_for_tado_c,
                 "is_saturated": r.is_saturated,

@@ -13,6 +13,29 @@ correction handles any remaining steady-state error.
                     + sensor_offset          (feedforward)
                     + kp * error             (proportional correction)
                     + integral               (integral correction)
+                    + derivative_brake       (optional, <= 0)
+
+Because the feedforward cancels Tado's own reading, the demand the TRV's
+internal controller actually acts on is
+
+    tado_demand = command - tado_reading
+                = (1 + kp) * error + integral + derivative_brake
+
+so the loop gain on the room error is (1 + kp), not kp.
+
+Derivative brake (optional, off by default)
+-------------------------------------------
+Tado's internal controller keeps heating for 30-60 min after its demand
+turns negative (its own integrator unwinds slowly).  With P + I alone the
+demand only crosses zero when the room reaches the target, which is always
+too late, and the room overshoots by the heat still on its way.  The brake
+
+    derivative_brake = -(1 + kp) * Td * max(0, room_slope)
+
+moves that zero-crossing earlier by Td * slope, i.e. it anticipates the
+heat already in the pipe.  It is one-sided by design: it can only ever
+*lower* the command, so a falling reading (open window, sensor glitch)
+can never make it add heat, and it is clamped to ``derivative_max_c``.
 
 Anti-windup (two mechanisms):
 1. The integral freezes whenever the output is saturated (clamped at max or
@@ -58,6 +81,7 @@ class RegulationResult:
     error_c: float                 # room error: setpoint - room_temp
     is_saturated: bool             # True when output was clamped
     new_state: RegulationState
+    d_correction_c: float = 0.0    # derivative brake, always <= 0 (diagnostic)
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +125,27 @@ class FeedforwardPiRegulator:
 
         return config.tuning.kp * multiplier
 
+    @staticmethod
+    def _derivative_brake(
+        room_slope_c_per_s: float | None, config: RegulationConfig
+    ) -> float:
+        """Return the one-sided derivative brake (°C, always <= 0).
+
+        Uses the *unscheduled* loop gain (1 + kp) so the anticipation
+        distance is Td * slope regardless of the gain-scheduling zone.
+        """
+        td_s = config.tuning.td_s
+        if td_s <= 0 or room_slope_c_per_s is None:
+            return 0.0
+        if not math.isfinite(room_slope_c_per_s) or not math.isfinite(td_s):
+            return 0.0
+        deadband = config.derivative_slope_deadband_c_per_h / 3600.0
+        rising = room_slope_c_per_s - deadband
+        if rising <= 0:
+            return 0.0
+        brake = (1.0 + max(0.0, config.tuning.kp)) * td_s * rising
+        return -min(max(0.0, config.derivative_max_c), brake)
+
     def compute(
         self,
         setpoint_c: float,
@@ -108,6 +153,7 @@ class FeedforwardPiRegulator:
         tado_internal_c: float,
         time_delta_s: float,
         state: RegulationState,
+        room_slope_c_per_s: float | None = None,
     ) -> RegulationResult:
         """Run one regulation cycle and return the result.
 
@@ -123,6 +169,9 @@ class FeedforwardPiRegulator:
             Seconds elapsed since the last cycle (0.0 on the very first run).
         state:
             Previous regulation state (integral accumulator, etc.).
+        room_slope_c_per_s:
+            Robust estimate of the room temperature slope (°C/s), used only
+            by the derivative brake.  None (or Td = 0) disables the brake.
         """
 
         # 0. Guard: reject NaN/Inf inputs – they would corrupt all calculations
@@ -164,9 +213,12 @@ class FeedforwardPiRegulator:
         # 4. Integral correction (carried from previous cycles)
         i_correction = state.integral_c
 
+        # 4b. Derivative brake (one-sided, clamped; 0 when Td = 0)
+        d_correction = self._derivative_brake(room_slope_c_per_s, self.cfg)
+
         # 5. Combine: base target + corrections
         base_target = setpoint_c + feedforward_offset
-        raw_command = base_target + p_correction + i_correction
+        raw_command = base_target + p_correction + i_correction + d_correction
 
         # 6. Clamp to safe actuator range
         final_command = max(
@@ -215,4 +267,5 @@ class FeedforwardPiRegulator:
             error_c=round(error, 2),
             is_saturated=is_saturated,
             new_state=new_state,
+            d_correction_c=round(d_correction, 2),
         )

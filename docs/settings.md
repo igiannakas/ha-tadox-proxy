@@ -64,6 +64,10 @@ Each entry creates:
 | `button.<name>_resume_schedule` | Hands the room back to the schedule. Unavailable without a schedule |
 | `binary_sensor.<name>_sensor_degraded` | Turns on when your room sensor stops reporting |
 | `switch.<name>_follow_physical_thermostat` | Off by default, see [below](#following-the-physical-thermostat) |
+| `sensor.<name>_kp_in_use`, `_ki_in_use`, `_braking_time_in_use` | The controller values in use right now, learned or yours. Kept in long-term history |
+| `sensor.<name>_auto_tune_status` | Disabled, Learning, Tuning or Frozen. The attributes show what it measured and why it last changed something |
+| `sensor.<name>_room_dead_time`, `_radiator_coast_time`, `_heat_up_rate`, `_last_heat_up_overshoot` | What auto-tune has learned about the room. Unavailable while auto-tune is off |
+| `button.<name>_reset_auto_tune` | Forget what auto-tune learned and go back to your values |
 
 The `sensor_degraded` entity is worth putting on a dashboard or wiring to a
 notification — a dead room sensor is the one failure that quietly ruins the
@@ -256,6 +260,53 @@ the temperature you have.
 | Kp (Proportional) | 0.8 | 0.0–5.0 | How hard it reacts to the current gap |
 | Ki (Integral) | 0.003 | 0.0–0.1 | How fast it corrects a long-standing offset |
 | Integral precision zone | 0.3 °C | 0.1–1.0 °C | Long-term correction only builds up inside this band |
+| Heat-up braking time | 0 min (off) | 0–45 min | How early to stop heating before the target. See [below](#heat-up-braking) |
+
+#### Heat-up braking
+
+A Tado X keeps heating for a while after it is told to stop. Its own controller
+winds down slowly and the radiator is still hot, so the room usually sails past
+the target by half a degree or more.
+
+The braking time is how far ahead the integration looks. While the room is
+warming, it lowers the target it sends by `(1 + Kp) × braking time × warming
+rate`, so the Tado stops before the room arrives. It never raises the target and
+does nothing while the room is cooling. Its effect is capped at 2 °C.
+
+Typical values are 15–35 minutes. You normally do not set this yourself:
+[auto-tune](#auto-tune) learns it.
+
+### Auto-tune
+
+Learns the controller values for this room in the background, from ordinary
+heat-ups and steady periods. Off by default.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Enable auto-tune | Off | Adjust Kp, Ki and the braking time automatically |
+| Learn heat-up braking | On | Also learn the braking time. Recommended |
+
+How it behaves:
+
+- **Your values are the starting point.** The values in the PI Controller section
+  are where it starts, and it stays within safe limits around them: Kp from a
+  quarter to twice yours, Ki from a twentieth to twice yours. If your Ki is 0, it
+  stays 0.
+- **It needs heat-ups.** Each time the room warms to a new target (for example
+  night → comfort), it measures how long the room takes to respond, how fast it
+  warms and how long the radiator keeps heating after Tado is told to stop. Expect
+  the first changes after a day or two, and settled values after about a week.
+- **Small steps, checked.** Values move a little at a time, at most every few
+  hours. After each change it compares the next heat-up with the ones before. If
+  things got worse, it puts the old values back and pauses for three days.
+- **Nothing is learned from unusual periods**: open windows, away, boost, summer
+  mode, heating off, or a missing sensor.
+- **Changing Kp, Ki or the braking time yourself restarts learning** from your new
+  values. Turning auto-tune off returns to your values immediately. So does the
+  *Reset auto-tune* button.
+
+The full design, including why each limit is there, is in
+[Auto-tune: design and rationale](pi-autotune.md).
 
 ### Gain Scheduling
 
@@ -309,9 +360,12 @@ something is wrong or when you are curious what the integration is thinking.
 | `feedforward_offset_c` | How much warmer the Tado reads than the room. Normally 1–5 °C |
 | `p_correction_c` | Correction from the current gap |
 | `i_correction_c` | Correction from a persistent offset |
+| `d_correction_c` | Heat-up braking right now (0 or negative) |
 | `error_c` | The gap between target and actual room temperature |
 | `target_for_tado_c` | The number actually sent to the Tado |
 | `correction_kp` / `correction_ki` | The gains currently in effect |
+| `correction_td_min` | The braking time currently in effect, in minutes |
+| `autotune_status` | Auto-tune: disabled, learning, tuning or frozen |
 | `window_open_active` | Window detection has taken over |
 | `window_close_delay_active` | Waiting after a window closed |
 | `presence_away_active` | Presence detection has taken over |

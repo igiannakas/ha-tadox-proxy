@@ -1,7 +1,7 @@
 # Tado X Proxy Thermostat
 
 [![Tests](https://github.com/kinimodb/ha-tadox-proxy/actions/workflows/tests.yml/badge.svg)](https://github.com/kinimodb/ha-tadox-proxy/actions/workflows/tests.yml)
-![Version](https://img.shields.io/badge/version-1.4.3-blue)
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
 ![HA](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-41BDF5)
 
 **Read this page in your language:**
@@ -125,6 +125,9 @@ Beyond the temperature correction, you get:
   still change a room by hand; it goes back to the schedule by itself. Optional.
 - **Dashboard card** — one card per room with temperatures, heating % and mode
   buttons. Comes with the integration; see [Dashboard card](docs/dashboard-card.md).
+- **Auto-tune** — learns how your room heats up and adjusts itself, so the room
+  stops going past the temperature you asked for. Off unless you switch it on.
+  Optional.
 
 Details for all of these are in the [settings reference](docs/settings.md).
 
