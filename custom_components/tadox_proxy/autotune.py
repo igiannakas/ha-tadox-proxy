@@ -594,8 +594,7 @@ class _HoldTracker:
 STATUS_DISABLED = "disabled"   # reported by the integration when switched off
 STATUS_LEARNING = "learning"
 STATUS_TUNING = "tuning"
-STATUS_FROZEN = "frozen"
-STATUSES = [STATUS_DISABLED, STATUS_LEARNING, STATUS_TUNING, STATUS_FROZEN]
+STATUSES = [STATUS_DISABLED, STATUS_LEARNING, STATUS_TUNING]
 
 PHASE_IDLE = "idle"
 PHASE_HEATUP = "heat_up"
@@ -628,9 +627,11 @@ class Autotuner:
       limited (longer wait for "more heat" moves than for gentler ones);
     * "more heat" moves (higher Kp/Ki, less braking) need ``confirm_up``
       agreeing episodes; gentler moves need one;
-    * after every change the next episode(s) are compared with the ones
-      before it and the change is rolled back if things got worse; the
-      tuner then freezes and never retries that move;
+    * after every "more heat" change the next heat-ups are compared with
+      the ones before it, and the change is rolled back if things got
+      worse.  The tuner may try again later, but only on fresh evidence
+      (the trims are re-anchored to the restored values) and only after
+      the normal rate limit;
     * a large oscillation detunes immediately;
     * the derivative brake can only lower the command (regulation.py).
     """
@@ -665,7 +666,6 @@ class Autotuner:
     # -- state -------------------------------------------------------------
     def _reset_learning(self) -> None:
         b = self._baseline
-        self._blocked: dict[str, list[float]] = {}   # cleared first: _bounded reads it
         self._params = self._bounded(Tuning(b.kp, b.ki, b.td_s))
         self._last_good = self._params
         self._trim = {"kp": 1.0, "ki": 1.0, "td_s": 1.0}
@@ -673,7 +673,6 @@ class Autotuner:
         self._heatups: list[HeatupMetrics] = []
         self._holds: list[HoldMetrics] = []
         self._last_change_ts = 0.0
-        self._freeze_until = 0.0
         self._pending: dict[str, Any] | None = None
         self._counters = {"heatups": 0, "holds": 0, "updates": 0, "rollbacks": 0}
         self.last_update_reason = ""
@@ -718,8 +717,6 @@ class Autotuner:
         return PHASE_IDLE
 
     def status_at(self, now: float) -> str:
-        if now < self._freeze_until:
-            return STATUS_FROZEN
         if self._counters["updates"] == 0 and self._model()["theta_s"] is None:
             return STATUS_LEARNING
         return STATUS_TUNING
@@ -749,14 +746,6 @@ class Autotuner:
         # Never move the user's own value by fiat: a configured value outside
         # the hard bounds widens them, so learning starts exactly there.
         lo, hi = min(lo, base), max(hi, base)
-        # A rolled-back "more heat" move stays blocked for a while.  Only
-        # that direction is blocked; gentler moves stay possible.
-        blk = self._blocked.get(name)
-        if blk and blk[1] > self._now:
-            if name == "td_s":
-                lo = min(max(lo, blk[0]), hi)
-            else:
-                hi = max(min(hi, blk[0]), lo)
         return lo, hi
 
     def _bounded(self, t: Tuning) -> Tuning:
@@ -1052,7 +1041,7 @@ class Autotuner:
 
     def _maybe_update(self, now: float, trigger: str, *, emergency: bool = False) -> str | None:
         c = self.cfg
-        if not emergency and (self._pending is not None or now < self._freeze_until):
+        if not emergency and self._pending is not None:
             return None
         cur = self._params
         tgt = self._targets()
@@ -1160,21 +1149,20 @@ class Autotuner:
         self._pending = None
 
     def _rollback(self, now: float, why: str) -> str:
+        """Restore the values from before the change on trial.
+
+        No freeze and no blocked directions: the tuner carries on and may
+        try a similar move again.  It needs fresh evidence to do so (the
+        trims are re-anchored to the restored values and the votes are
+        cleared) and it waits the normal rate limit, counted from now.
+        """
         p = self._pending or {}
         prev = _tuning_from(p.get("prev")) or self._last_good
-        cur = self._params
-        for name in _PARAMS:
-            a, b = getattr(prev, name), getattr(cur, name)
-            more_heat = b < a - 1e-9 if name == "td_s" else b > a + 1e-12
-            if more_heat:
-                # Do not retry the failed "more heat" move for a while.
-                # Gentler moves on this value stay allowed.
-                self._blocked[name] = [a, now + self.cfg.block_s]
         self._params = self._bounded(prev)
         self._anchor_trims()
+        self._votes = dict.fromkeys(self._votes, 0)
         self._last_good = self._params
         self._pending = None
-        self._freeze_until = now + self.cfg.freeze_after_rollback_s
         self._last_change_ts = now
         self._counters["rollbacks"] += 1
         self.last_update_reason = f"rolled back ({why})"
@@ -1183,11 +1171,7 @@ class Autotuner:
 
     # -- reporting -------------------------------------------------------------------
     def summary(self, now: float | None = None) -> dict[str, Any]:
-        """Diagnostic snapshot for attributes and sensors.
-
-        ``now`` (wall clock) keeps the frozen status right while no cycles
-        are being observed, e.g. just after a restart or while disabled.
-        """
+        """Diagnostic snapshot for attributes and sensors."""
         now = self._now if now is None or not _finite(now) else max(now, self._now)
         m = self._model()
         last = self._heatups[-1] if self._heatups else None
@@ -1221,7 +1205,6 @@ class Autotuner:
             "updates": self._counters["updates"],
             "rollbacks": self._counters["rollbacks"],
             "awaiting_evaluation": self._pending is not None,
-            "frozen_until": self._freeze_until if now < self._freeze_until else None,
             "last_update": self.last_update_reason,
             "last_event": self.last_event,
             "trims": {k: round(v, 3) for k, v in self._trim.items()},
@@ -1239,9 +1222,7 @@ class Autotuner:
             "heatups": [m.as_dict() for m in self._heatups],
             "holds": [m.as_dict() for m in self._holds],
             "last_change_ts": self._last_change_ts,
-            "freeze_until": self._freeze_until,
             "pending": self._pending,
-            "blocked": self._blocked,
             "counters": dict(self._counters),
             "last_update_reason": self.last_update_reason,
         }
@@ -1257,12 +1238,6 @@ class Autotuner:
             params = _tuning_from(d.get("params"))
             if params is None:
                 return
-            blocked = d.get("blocked") or {}
-            self._blocked = {
-                k: [float(v[0]), float(v[1])] for k, v in blocked.items()
-                if k in _PARAMS and isinstance(v, list) and len(v) == 2
-                and _finite(v[0], v[1])
-            }
             self._params = self._bounded(params)
             self._last_good = self._bounded(_tuning_from(d.get("last_good")) or self._params)
             for k, v in (d.get("trim") or {}).items():
@@ -1278,8 +1253,6 @@ class Autotuner:
                            if m is not None][-4:]
             if _finite(d.get("last_change_ts")):
                 self._last_change_ts = float(d["last_change_ts"])
-            if _finite(d.get("freeze_until")):
-                self._freeze_until = float(d["freeze_until"])
             p = d.get("pending")
             if (isinstance(p, dict) and _finite(p.get("ts")) and _tuning_from(p.get("prev"))
                     and isinstance(p.get("overshoots"), list)):

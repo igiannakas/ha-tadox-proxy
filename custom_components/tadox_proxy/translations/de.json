@@ -227,8 +227,7 @@
         "state": {
           "disabled": "Deaktiviert",
           "learning": "Lernt",
-          "tuning": "Optimiert",
-          "frozen": "Eingefroren"
+          "tuning": "Optimiert"
         }
       },
       "autotune_dead_time": {

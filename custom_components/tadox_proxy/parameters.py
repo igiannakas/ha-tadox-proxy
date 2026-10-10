@@ -157,10 +157,9 @@ class AutotuneConfig:
 
     # Watchdog: an update is rolled back if the next episodes are worse by
     # this much (overshoot, °C) or a new oscillation appears.
+    # After a rollback the tuner carries on straight away (no freeze, nothing
+    # blocked); a retry needs fresh evidence and the normal rate limit.
     rollback_margin_c: float = 0.2
-    freeze_after_rollback_s: float = 3 * 86400.0
-    # A rolled-back "more heat" move is not retried for this long.
-    block_s: float = 30 * 86400.0
     pending_timeout_s: float = 7 * 86400.0
 
     # Plausibility of identified values; anything outside is discarded.

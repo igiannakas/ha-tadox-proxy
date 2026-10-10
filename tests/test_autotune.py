@@ -506,12 +506,30 @@ class TestSafety:
         reason = t._on_heatup(_heatup(4 * DAY, 0.9), 4 * DAY)
         assert reason.startswith("rolled back")
         assert t.active_tuning() == prev
-        t._now = 4 * DAY + 1
-        assert t.status == A.STATUS_FROZEN
-        assert t._on_heatup(_heatup(4.5 * DAY, 0.9), 4.5 * DAY) is None   # frozen
-        # only the failed "more heat" direction is blocked, for a limited time
-        assert set(t._blocked) == {"kp"}
-        assert t._limits("kp")[1] == pytest.approx(prev.kp)
+        assert t.status == A.STATUS_TUNING              # no freeze
+        assert t._limits("kp") == _expected_limits(t, "kp")   # nothing blocked
+
+    def test_after_rollback_it_tries_again_on_fresh_evidence(self):
+        t = _tuner(deriv=False)
+        prev = _force_more_heat(t, DAY)
+        t._rollback(DAY + 3600, "test")
+        assert t.active_tuning() == prev
+        assert t._votes == dict.fromkeys(t._votes, 0)   # old evidence cleared
+        assert t._maybe_update(DAY + 13 * 3600, "test") is None   # no new evidence
+        t._trim["kp"] = 1.4                              # fresh evidence arrives
+        assert t._maybe_update(DAY + 2 * 3600, "test") is None    # normal 12 h rate limit
+        assert t._maybe_update(DAY + 14 * 3600, "test") is not None
+        assert t.active_tuning().kp > prev.kp            # same move, tried again
+        assert t._pending is not None                    # and on trial again
+
+    def test_gentle_moves_allowed_soon_after_rollback(self):
+        t = _tuner(deriv=False)
+        _force_more_heat(t, DAY)
+        t._rollback(DAY + 3600, "test")
+        before = t.active_tuning()
+        t._trim["ki"] = 0.5
+        assert t._maybe_update(DAY + 3600 + 4 * 3600, "test") is not None
+        assert t.active_tuning().ki < before.ki
 
     def test_rollback_on_new_oscillation(self):
         t = _tuner(deriv=False)
@@ -530,7 +548,7 @@ class TestSafety:
         reason = t._on_heatup(_heatup(2 * DAY, 1.2, td=changed.td_s), 2 * DAY)
         assert not (reason or "").startswith("rolled back")
         assert t.active_tuning().td_s >= changed.td_s
-        assert t._blocked == {}
+        assert t.summary()["rollbacks"] == 0
 
     def test_emergency_still_works_after_rollback(self):
         t = _tuner(kp=1.0, ki=0.003, deriv=False)
@@ -545,27 +563,15 @@ class TestSafety:
         a = t.active_tuning()
         assert a.kp < before.kp and a.ki < before.ki
 
-    def test_block_expires(self):
-        t = _tuner(deriv=False)
-        prev = _force_more_heat(t, DAY)
-        t._rollback(DAY + 3600, "test")
-        t._now = DAY + 3600 + 1
-        assert t._limits("kp")[1] == pytest.approx(prev.kp)
-        t._now = DAY + 3600 + t.cfg.block_s + 1
-        assert t._limits("kp")[1] > prev.kp
-
-    def test_reset_and_baseline_change_clear_blocks(self):
+    def test_reset_and_baseline_change_after_rollback(self):
         t = _tuner(deriv=False)
         _force_more_heat(t, DAY)
         t._rollback(DAY + 3600, "test")
-        assert t._blocked
         t.reset()
-        assert t._blocked == {}
         assert t.active_tuning() == A.Tuning(0.6, 0.002, 0.0)
         _force_more_heat(t, 3 * DAY)
         t._rollback(3 * DAY + 3600, "test")
         t.set_baseline(A.Tuning(0.4, 0.001, 0.0), False)
-        assert t._blocked == {}
         assert t.active_tuning() == A.Tuning(0.4, 0.001, 0.0)
 
     def test_emergency_never_reduces_braking(self):
@@ -602,13 +608,15 @@ class TestSafety:
         t = _tuner(kp=kp, ki=ki)
         assert t.active_tuning() == A.Tuning(kp, ki, 0.0)
 
-    def test_frozen_status_follows_wall_clock(self):
+    def test_old_stored_freeze_and_blocks_are_ignored(self):
+        """State saved by 1.5.0 (with a freeze and a block) loads cleanly."""
         t = _tuner(deriv=False)
-        _force_more_heat(t, DAY)
-        t._rollback(DAY + 3600, "test")
-        restored = _tuner(deriv=False, stored=t.as_dict())   # e.g. after a restart
-        assert restored.summary(now=DAY + 7200)["status"] == A.STATUS_FROZEN
-        assert restored.summary(now=DAY + 10 * DAY)["status"] != A.STATUS_FROZEN
+        d = t.as_dict()
+        d["freeze_until"] = 9e12
+        d["blocked"] = {"kp": [0.6, 9e12]}
+        t2 = _tuner(deriv=False, stored=d)
+        assert t2.status != "frozen"
+        assert t2._limits("kp") == _expected_limits(t2, "kp")
 
     def test_emergency_detune_bypasses_rate_limit(self):
         t = _tuner(kp=1.5, ki=0.004)
